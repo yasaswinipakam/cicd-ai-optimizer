@@ -1,0 +1,58 @@
+name: Poll active CI jobs for stall telemetry
+
+# GitHub's workflow_job webhook is emitted on completion. This trusted,
+# default-branch workflow polls only Actions metadata so queued/in-progress
+# jobs can be assessed against historical completed-job baselines.
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  forward-active-job-telemetry:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Poll queued and in-progress jobs without checking out repository code
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          DIAGNOSTICS_URL: ${{ secrets.CI_DIAGNOSTICS_URL }}
+          DIAGNOSTICS_SECRET: ${{ secrets.CI_DIAGNOSTICS_COLLECTOR_SECRET }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$DIAGNOSTICS_URL"
+          test -n "$DIAGNOSTICS_SECRET"
+          case "$DIAGNOSTICS_URL" in
+            https://*) ;;
+            *) echo "CI_DIAGNOSTICS_URL must use HTTPS" >&2; exit 1 ;;
+          esac
+
+          for run_status in queued in_progress; do
+            gh api --paginate \
+              "/repos/${REPOSITORY}/actions/runs?status=${run_status}&per_page=100" \
+              --jq '.workflow_runs[].id' > "${run_status}-runs.txt"
+
+            while read -r run_id; do
+              [ -n "$run_id" ] || continue
+              gh api --paginate \
+                "/repos/${REPOSITORY}/actions/runs/${run_id}/jobs?filter=latest&per_page=100" \
+                --jq '.jobs[] | select(.status == "queued" or .status == "in_progress")' \
+                > "jobs-${run_id}.jsonl"
+
+              while read -r job; do
+                [ -n "$job" ] || continue
+                jq -n --arg repository "$REPOSITORY" --argjson workflow_job "$job" \
+                  '{repository: $repository, workflow_job: $workflow_job}' > payload.json
+                curl --fail-with-body --silent --show-error \
+                  -X POST "${DIAGNOSTICS_URL%/}/webhooks/github-actions/job-telemetry" \
+                  -H "Content-Type: application/json" \
+                  -H "X-CI-Diagnostics-Secret: ${DIAGNOSTICS_SECRET}" \
+                  --data-binary @payload.json
+              done < "jobs-${run_id}.jsonl"
+            done < "${run_status}-runs.txt"
+          done

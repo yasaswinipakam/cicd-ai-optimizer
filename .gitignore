@@ -1,0 +1,21 @@
+# Data and generated artifacts
+data/raw/*.gz
+data/raw/*.csv
+data/processed/*
+!data/processed/.gitkeep
+artifacts/*.joblib
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# JavaScript
+node_modules/
+
+# Local databases
+*.db
+.env
+
+# Generated local reports and temporary exports
+tmp/

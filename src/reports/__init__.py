@@ -1,0 +1,1 @@
+"""Generated report artifacts."""

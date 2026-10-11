@@ -1,0 +1,345 @@
+{
+  "dataset": "GADFPD / final_research_dataset_MASTER.csv",
+  "path": "/Users/yasaswini/Documents/New project/cicd-ai-optimizer/data/raw/final_research_dataset_MASTER.csv",
+  "row_count": 303079,
+  "column_count": 38,
+  "repository_count": 654,
+  "created_at_min": "2016-08-08 17:58:18+00:00",
+  "created_at_max": "2026-04-18 17:48:19+00:00",
+  "conclusion_counts": {
+    "success": 137168,
+    "skipped": 38041,
+    "failure": 8671,
+    "cancelled": 5260,
+    "startup_failure": 271,
+    "action_required": 35,
+    "<missing>": 91047,
+    "passed": 17522,
+    "failed": 3702,
+    "errored": 1253,
+    "canceled": 109
+  },
+  "proposed_pre_run_fields": [
+    "repo",
+    "event",
+    "head_branch",
+    "run_number",
+    "created_at",
+    "workflow_id",
+    "msg_len",
+    "is_merge",
+    "num_parents",
+    "additions",
+    "deletions",
+    "total_churn",
+    "files_modified",
+    "time_since_last_commit"
+  ],
+  "fields": [
+    {
+      "column": "run_id",
+      "dtype_sample": "int64",
+      "missing_count": 0,
+      "missing_rate": 0.0,
+      "disposition": "excluded_or_diagnostic",
+      "reason": "Opaque execution identifier with no stable predictive semantics."
+    },
+    {
+      "column": "repo",
+      "dtype_sample": "object",
+      "missing_count": 0,
+      "missing_rate": 0.0,
+      "disposition": "candidate_pre_run",
+      "reason": "Repository identity; use for group-aware evaluation and optional local calibration, not as a global-model feature."
+    },
+    {
+      "column": "repo_name",
+      "dtype_sample": "float64",
+      "missing_count": 280493,
+      "missing_rate": 0.9254781756571719,
+      "disposition": "excluded_or_diagnostic",
+      "reason": "Duplicate/mostly missing repository field; use canonical repo only after validation."
+    },
+    {
+      "column": "commit_sha",
+      "dtype_sample": "object",
+      "missing_count": 0,
+      "missing_rate": 0.0,
+      "disposition": "excluded_or_diagnostic",
+      "reason": "Opaque commit identifier; use only for joins and deduplication."
+    },
+    {
+      "column": "conclusion",
+      "dtype_sample": "object",
+      "missing_count": 91047,
+      "missing_rate": 0.30040682462328305,
+      "disposition": "excluded_or_diagnostic",
+      "reason": "Post-run outcome; this is the research target, never a predictive feature."
+    },
+    {
+      "column": "status",
+      "dtype_sample": "object",
+      "missing_count": 22613,
+      "missing_rate": 0.0746109100267587,
+      "disposition": "excluded_or_diagnostic",
+      "reason": "Execution state becomes known during/after workflow execution; exclude from pre-run prediction."
+    },
+    {
+      "column": "duration",
+      "dtype_sample": "float64",
+      "missing_count": 5,
+      "missing_rate": 1.649734887603562e-05,
+      "disposition": "excluded_or_diagnostic",
+      "reason": "Observed only after or during execution; post-build leakage."
+    },
+    {
+      "column": "created_at",
+      "dtype_sample": "object",
+      "missing_count": 91030,
+      "missing_rate": 0.3003507336371045,
+      "disposition": "candidate_pre_run",
+      "reason": "Run creation time; derive calendar features only."
+    },
+    {
+      "column": "run_started_at",
+      "dtype_sample": "object",
+      "missing_count": 91030,
+      "missing_rate": 0.3003507336371045,
+      "disposition": "excluded_or_diagnostic",
+      "reason": "Execution-start timestamp; retain for chronology only, not a pre-dispatch feature."
+    },
+    {
+      "column": "updated_at",
+      "dtype_sample": "object",
+      "missing_count": 113616,
+      "missing_rate": 0.37487255797993263,
+      "disposition": "excluded_or_diagnostic",
+      "reason": "Updated after workflow progress/completion; post-build leakage."
+    },
+    {
+      "column": "event",
+      "dtype_sample": "object",
+      "missing_count": 113616,
+      "missing_rate": 0.37487255797993263,
+      "disposition": "candidate_pre_run",
+      "reason": "Workflow trigger is known when the run is created."
+    },
+    {
+      "column": "head_branch",
+      "dtype_sample": "object",
+      "missing_count": 91031,
+      "missing_rate": 0.30035403310687975,
+      "disposition": "candidate_pre_run",
+      "reason": "Branch is known at workflow dispatch."
+    },
+    {
+      "column": "run_number",
+      "dtype_sample": "float64",
+      "missing_count": 91030,
+      "missing_rate": 0.3003507336371045,
+      "disposition": "candidate_pre_run",
+      "reason": "Workflow run sequence is assigned at run creation."
+    },
+    {
+      "column": "author_name",
+      "dtype_sample": "object",
+      "missing_count": 113616,
+      "missing_rate": 0.37487255797993263,
+      "disposition": "excluded_or_diagnostic",
+      "reason": "Personally identifying and brittle categorical field; do not use as a global feature."
+    },
+    {
+      "column": "author_email",
+      "dtype_sample": "object",
+      "missing_count": 113616,
+      "missing_rate": 0.37487255797993263,
+      "disposition": "excluded_or_diagnostic",
+      "reason": "Personally identifying field; do not use."
+    },
+    {
+      "column": "committer_name",
+      "dtype_sample": "object",
+      "missing_count": 113616,
+      "missing_rate": 0.37487255797993263,
+      "disposition": "excluded_or_diagnostic",
+      "reason": "Personally identifying and brittle categorical field; do not use."
+    },
+    {
+      "column": "committer_email",
+      "dtype_sample": "object",
+      "missing_count": 113616,
+      "missing_rate": 0.37487255797993263,
+      "disposition": "excluded_or_diagnostic",
+      "reason": "Personally identifying field; do not use."
+    },
+    {
+      "column": "authored_date",
+      "dtype_sample": "object",
+      "missing_count": 113616,
+      "missing_rate": 0.37487255797993263,
+      "disposition": "excluded_or_diagnostic",
+      "reason": "Raw commit timestamp; derive calendar features from a documented timestamp instead."
+    },
+    {
+      "column": "committed_date",
+      "dtype_sample": "object",
+      "missing_count": 113616,
+      "missing_rate": 0.37487255797993263,
+      "disposition": "excluded_or_diagnostic",
+      "reason": "Raw commit timestamp; derive calendar features from a documented timestamp instead."
+    },
+    {
+      "column": "message",
+      "dtype_sample": "object",
+      "missing_count": 113616,
+      "missing_rate": 0.37487255797993263,
+      "disposition": "excluded_or_diagnostic",
+      "reason": "Raw text can be studied separately, but is excluded from the first tabular baseline to avoid fragile lexical leakage."
+    },
+    {
+      "column": "msg_len",
+      "dtype_sample": "int64",
+      "missing_count": 0,
+      "missing_rate": 0.0,
+      "disposition": "candidate_pre_run",
+      "reason": "Commit-message length is known before the workflow starts."
+    },
+    {
+      "column": "is_merge",
+      "dtype_sample": "bool",
+      "missing_count": 113616,
+      "missing_rate": 0.37487255797993263,
+      "disposition": "candidate_pre_run",
+      "reason": "Merge-commit status is known from commit metadata before execution."
+    },
+    {
+      "column": "num_parents",
+      "dtype_sample": "float64",
+      "missing_count": 113616,
+      "missing_rate": 0.37487255797993263,
+      "disposition": "candidate_pre_run",
+      "reason": "Commit graph structure is known before execution."
+    },
+    {
+      "column": "additions",
+      "dtype_sample": "int64",
+      "missing_count": 0,
+      "missing_rate": 0.0,
+      "disposition": "candidate_pre_run",
+      "reason": "Commit-level additions are available from the commit before the run starts."
+    },
+    {
+      "column": "deletions",
+      "dtype_sample": "int64",
+      "missing_count": 0,
+      "missing_rate": 0.0,
+      "disposition": "candidate_pre_run",
+      "reason": "Commit-level deletions are available from the commit before the run starts."
+    },
+    {
+      "column": "total_churn",
+      "dtype_sample": "float64",
+      "missing_count": 113616,
+      "missing_rate": 0.37487255797993263,
+      "disposition": "candidate_pre_run",
+      "reason": "Commit-level churn is available before the run starts."
+    },
+    {
+      "column": "files_modified",
+      "dtype_sample": "int64",
+      "missing_count": 0,
+      "missing_rate": 0.0,
+      "disposition": "candidate_pre_run",
+      "reason": "Changed-file count is available before the run starts."
+    },
+    {
+      "column": "timestamp_raw",
+      "dtype_sample": "object",
+      "missing_count": 0,
+      "missing_rate": 0.0,
+      "disposition": "excluded_or_diagnostic",
+      "reason": "Duplicate raw timestamp field; use only to validate chronology."
+    },
+    {
+      "column": "commit_date",
+      "dtype_sample": "float64",
+      "missing_count": 212049,
+      "missing_rate": 0.6996492663628955,
+      "disposition": "excluded_or_diagnostic",
+      "reason": "Duplicate/mostly missing timestamp field; exclude pending data-quality validation."
+    },
+    {
+      "column": "author",
+      "dtype_sample": "float64",
+      "missing_count": 189463,
+      "missing_rate": 0.6251274420200674,
+      "disposition": "excluded_or_diagnostic",
+      "reason": "Duplicate/mostly missing author field; exclude for privacy and quality reasons."
+    },
+    {
+      "column": "workflow_id",
+      "dtype_sample": "float64",
+      "missing_count": 113616,
+      "missing_rate": 0.37487255797993263,
+      "disposition": "candidate_pre_run",
+      "reason": "Workflow configuration identity is known at dispatch; assess generalization carefully."
+    },
+    {
+      "column": "node_id",
+      "dtype_sample": "object",
+      "missing_count": 113616,
+      "missing_rate": 0.37487255797993263,
+      "disposition": "excluded_or_diagnostic",
+      "reason": "Opaque platform identifier; never a model feature."
+    },
+    {
+      "column": "head_sha",
+      "dtype_sample": "object",
+      "missing_count": 113616,
+      "missing_rate": 0.37487255797993263,
+      "disposition": "excluded_or_diagnostic",
+      "reason": "Opaque commit identifier; use only for joins and deduplication."
+    },
+    {
+      "column": "run_attempt",
+      "dtype_sample": "float64",
+      "missing_count": 113616,
+      "missing_rate": 0.37487255797993263,
+      "disposition": "excluded_or_diagnostic",
+      "reason": "May encode retries following an earlier failure; exclude absent a proven pre-run definition."
+    },
+    {
+      "column": "actor_login",
+      "dtype_sample": "object",
+      "missing_count": 113616,
+      "missing_rate": 0.37487255797993263,
+      "disposition": "excluded_or_diagnostic",
+      "reason": "Platform actor identifier; high-cardinality and repository-specific; exclude from the global baseline."
+    },
+    {
+      "column": "triggering_actor_login",
+      "dtype_sample": "object",
+      "missing_count": 113616,
+      "missing_rate": 0.37487255797993263,
+      "disposition": "excluded_or_diagnostic",
+      "reason": "Platform actor identifier; high-cardinality and repository-specific; exclude from the global baseline."
+    },
+    {
+      "column": "time_since_last_commit",
+      "dtype_sample": "float64",
+      "missing_count": 113616,
+      "missing_rate": 0.37487255797993263,
+      "disposition": "candidate_pre_run",
+      "reason": "Historical commit interval can be computed before dispatch."
+    },
+    {
+      "column": "timestamp",
+      "dtype_sample": "float64",
+      "missing_count": 212049,
+      "missing_rate": 0.6996492663628955,
+      "disposition": "excluded_or_diagnostic",
+      "reason": "Duplicate/mostly missing timestamp field; exclude pending data-quality validation."
+    }
+  ],
+  "scope_note": "Separate GitHub Actions research dataset. Do not merge with TravisTorrent or deploy to the live API without separate temporal and repository-aware evaluation."
+}

@@ -1,0 +1,86 @@
+name: Forward failed CI job logs to diagnostics API
+
+# This workflow deliberately runs after the primary CI workflow completes. It
+# never checks out or executes code from that workflow; it only reads Actions
+# metadata/logs and forwards failed-job text over HTTPS for post-failure analysis.
+on:
+  workflow_run:
+    # Replace CI with the exact display name of the workflow to monitor.
+    workflows: ["CI"]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  collect-failed-job-logs:
+    if: ${{ github.event.workflow_run.conclusion == 'failure' || github.event.workflow_run.conclusion == 'timed_out' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Find failed jobs and forward each real log
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          DIAGNOSTICS_URL: ${{ secrets.CI_DIAGNOSTICS_URL }}
+          DIAGNOSTICS_SECRET: ${{ secrets.CI_DIAGNOSTICS_COLLECTOR_SECRET }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$DIAGNOSTICS_URL"
+          test -n "$DIAGNOSTICS_SECRET"
+          case "$DIAGNOSTICS_URL" in
+            https://*) ;;
+            *) echo "CI_DIAGNOSTICS_URL must use HTTPS" >&2; exit 1 ;;
+          esac
+
+          # A workflow run can have multiple failed jobs. The REST endpoint
+          # returns GitHub provider job IDs used by the signed webhook telemetry.
+          gh api --paginate \
+            "/repos/${REPOSITORY}/actions/runs/${RUN_ID}/jobs?filter=latest&per_page=100" \
+            --jq '.jobs[] | select(.conclusion == "failure" or .conclusion == "timed_out") | .id' \
+            > failed-job-ids.txt
+
+          while read -r job_id; do
+            [ -n "$job_id" ] || continue
+            log_file="job-${job_id}.log"
+            # GitHub returns a short-lived redirect to the plain-text job log;
+            # curl -L follows it without printing the log into Actions output.
+            curl --fail --silent --show-error --location \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              "https://api.github.com/repos/${REPOSITORY}/actions/jobs/${job_id}/logs" \
+              --output "$log_file"
+
+            # Keep the most recent output, where CI tools normally print the
+            # failure summary, within the server's 200 KiB retention limit.
+            tail -c 200000 "$log_file" > "${log_file}.trimmed"
+
+            jq -n \
+              --arg repository "$REPOSITORY" \
+              --arg provider_job_id "$job_id" \
+              --arg log_source "github_actions_workflow_run_collector" \
+              --rawfile log_content "${log_file}.trimmed" \
+              '{repository: $repository, provider_job_id: $provider_job_id, log_source: $log_source, log_content: $log_content}' \
+              > payload.json
+
+            # Webhook and workflow_run delivery are independent. Retry a 404
+            # briefly while the signed workflow_job webhook creates telemetry.
+            for attempt in 1 2 3 4 5; do
+              status="$(curl --silent --show-error --output response.json --write-out '%{http_code}' \
+                -X POST "${DIAGNOSTICS_URL%/}/webhooks/github-actions/job-log" \
+                -H "Content-Type: application/json" \
+                -H "X-CI-Diagnostics-Secret: ${DIAGNOSTICS_SECRET}" \
+                --data-binary @payload.json)"
+              if [ "$status" -ge 200 ] && [ "$status" -lt 300 ]; then
+                break
+              fi
+              if [ "$status" = "404" ] && [ "$attempt" -lt 5 ]; then
+                sleep 5
+                continue
+              fi
+              cat response.json >&2
+              exit 1
+            done
+          done < failed-job-ids.txt

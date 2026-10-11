@@ -1,0 +1,3 @@
+Regime,FeatureCount,Precision,Recall,F1,AUC,TrainingSeconds,Note
+Strict Pre-Build,13,0.32860889110889113,0.6217365623154164,0.4299660961562028,0.6902338498060125,1.7601949999989301,Exactly the 13 production pre-build features.
+Post-Build / Leaky,31,0.6781939338235294,0.6973419964559953,0.6876346904304269,0.8956009088430701,2.8743402090003656,Strict features plus registry-labelled post-build/post-failure log and duration fields.

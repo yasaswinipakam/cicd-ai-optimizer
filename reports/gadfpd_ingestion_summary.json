@@ -1,0 +1,55 @@
+{
+  "source": "/Users/yasaswini/Documents/New project/cicd-ai-optimizer/data/raw/final_research_dataset_MASTER.csv",
+  "output": "/Users/yasaswini/Documents/New project/cicd-ai-optimizer/data/processed/gadfpd_github_actions_research.parquet",
+  "scope": "GitHub-Actions-only research data; separate from TravisTorrent and production artifacts.",
+  "input_rows": 303079,
+  "github_actions_rows_before_label_filter": 189463,
+  "research_rows": 146110,
+  "repositories": 32,
+  "failures": 8942,
+  "failure_rate": 0.06120046540277873,
+  "date_start": "2025-02-24 12:58:46+00:00",
+  "date_end": "2026-04-18 17:48:19+00:00",
+  "train_rows": 116888,
+  "test_rows": 29222,
+  "pre_run_fields": [
+    "event",
+    "head_branch",
+    "run_number",
+    "msg_len",
+    "is_merge",
+    "num_parents",
+    "additions",
+    "deletions",
+    "total_churn",
+    "files_modified",
+    "time_since_last_commit",
+    "hour",
+    "day_of_week",
+    "month",
+    "is_weekend",
+    "is_night"
+  ],
+  "excluded_leakage_fields": [
+    "conclusion",
+    "status",
+    "duration",
+    "run_started_at",
+    "updated_at"
+  ],
+  "label_rule": {
+    "passed": [
+      "success"
+    ],
+    "failed": [
+      "failure",
+      "startup_failure"
+    ]
+  },
+  "excluded_terminal_conclusions": [
+    "cancelled",
+    "skipped",
+    "action_required"
+  ],
+  "repository_holdout_eligible": 26
+}

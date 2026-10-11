@@ -1,0 +1,22 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.11.16, pytest-9.1.1, pluggy-1.6.0 -- /Users/yasaswini/Documents/New project/cicd-ai-optimizer/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/yasaswini/Documents/New project/cicd-ai-optimizer
+configfile: pyproject.toml
+plugins: anyio-4.14.2
+collecting ... collected 12 items
+
+tests/test_anomaly.py::test_obvious_outlier_is_flagged_and_detector_round_trips PASSED [  8%]
+tests/test_auth.py::test_login_and_current_user PASSED                   [ 16%]
+tests/test_clustering.py::test_distinct_failure_themes_are_separated_and_blanks_use_own_bucket PASSED [ 25%]
+tests/test_db.py::test_build_audit_relationships_resolve_with_in_memory_sqlite PASSED [ 33%]
+tests/test_e2e.py::test_authenticated_build_submission_persists_and_updates_dashboard PASSED [ 41%]
+tests/test_evaluate.py::test_model_results_has_four_models_and_bounded_metrics SKIPPED [ 50%]
+tests/test_features.py::test_engineer_features_adds_expected_columns_and_encodes_missing_values PASSED [ 58%]
+tests/test_features.py::test_feature_schema_excludes_post_build_log_columns PASSED [ 66%]
+tests/test_pipelines.py::test_build_persistence_pipeline_listing_and_dashboard_summary PASSED [ 75%]
+tests/test_predictor.py::test_full_analysis_handles_minimal_and_unseen_live_payload PASSED [ 83%]
+tests/test_preprocess.py::test_clean_filters_statuses_creates_time_features_and_drops_bad_dates PASSED [ 91%]
+tests/test_webhooks.py::test_github_actions_webhook_requires_secret_and_persists_build PASSED [100%]
+
+================== 11 passed, 1 skipped, 3 warnings in 2.68s ===================
