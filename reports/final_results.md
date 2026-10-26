@@ -15,7 +15,7 @@ finish-time-safe heap protocol (only builds that finished strictly before the
 current build started), matching the Phase-1 rigor study.  Cold-start default
 is 0.0.
 
-40 features (37 original + 3 streak/gap + 3 previously unused pre-build columns).
+43 features (37 original + 3 streak/gap + 3 previously unused pre-build columns).
 Hyperparameters tuned via `RandomizedSearchCV` (n_iter=25, 3-fold CV, F1 scoring) + LightGBM added.
 Best RF: `max_depth=None, max_features=sqrt, class_weight=balanced, n_estimators=200`.
 Best XGB: `n_estimators=400, max_depth=10, lr=0.2, subsample=0.9, reg_lambda=2.0`.
@@ -38,12 +38,16 @@ use the XGB base estimator via TreeExplainer.
 
 No `tr_log_*` post-build field was used as a prediction feature.
 
-## Authoritative result — full chronological split (this codebase, RF)
+## Chronological job-level result — full split (development reference, RF)
 
-Trained on the earliest 80% of all 3.56M rows (2011–2016-03), tested on the
-latest 20% (2016-03 to 2016-08).  Threshold selected on a chronological
-validation window inside the training period.  **This is the honest headline
-number.**
+Trained on the earliest 80% of all 3.56M **job rows** (2011–2016-03), tested
+on the latest 20% (2016-03 to 2016-08).  Threshold selected on a chronological
+validation window inside the training period.
+
+**NOT the Phase-1 headline.**  Phase-1 requires evaluation at **build level**
+(~858k unique `tr_build_id` values) with per-repo walk-forward folds.  This
+job-level result shows directional progress but cannot be directly compared to
+the Phase-1 protocol or cited as a valid headline AUC.
 
 | Train rows | Test rows | Threshold | Precision | Recall | F1 | AUC |
 |---:|---:|---:|---:|---:|---:|---:|
@@ -56,8 +60,19 @@ alert-rate ceiling and a precision floor equal to the base failure rate.
 ### Phase-1 rigor study cross-check
 
 `src/models/phase1_rigor_evaluation.py` uses per-repository walk-forward folds
-with block bootstrap CIs — a stricter within-repo protocol.  **Both are honest;
-cite the one that matches your evaluation question.**
+with block bootstrap CIs — a stricter within-repo protocol at the correct
+**build level** (~858k builds).
+
+**These two results are NOT directly comparable** and should not both be
+labelled "honest headlines":
+- The full-mode result above operates at **job level** (3.56M rows).  A single
+  build can span multiple job rows, so label/feature duplication inflates
+  apparent sample size and can place related jobs across the train/test boundary.
+- The Phase-1 within-repo result operates at **build level** with per-repo
+  walk-forward folds — this is the agreed Phase-1 unit of analysis.
+
+Cite the Phase-1 build-level result as the headline.  The job-level full-mode
+result is a development reference that shows directional improvement only.
 
 | Metric | Phase-1 Tier A (no history) | Phase-1 Tier C (+ history) | This codebase (full mode) |
 |---|---:|---:|---:|
