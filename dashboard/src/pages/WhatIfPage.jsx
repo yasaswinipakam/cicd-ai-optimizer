@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import client from '../api/client'
+import { PageHeader } from '../components/ui'
+import { axisProps, chartColors, tooltipProps } from '../theme/chart'
 
 const initialControls = {
   srcChurn: 50,
@@ -40,21 +42,24 @@ function percent(value) {
 
 function RiskBadge({ probability }) {
   const value = Number(probability || 0) * 100
-  const color = value < 30 ? 'text-emerald-600' : value < 60 ? 'text-amber-600' : 'text-red-600'
-  return <span className={`text-4xl font-bold ${color}`}>{value.toFixed(1)}%</span>
+  const [color, bar] = value < 30 ? ['text-success', 'bg-success'] : value < 60 ? ['text-warn', 'bg-warn'] : ['text-danger', 'bg-danger']
+  return <div>
+    <span className={`stat text-5xl font-semibold ${color} drop-shadow-[0_0_18px_currentColor]`}>{value.toFixed(1)}%</span>
+    <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-raised"><div className={`h-full rounded-full ${bar} transition-all duration-500`} style={{ width: `${Math.min(value, 100)}%` }} /></div>
+  </div>
 }
 
 function ExplanationList({ explanation }) {
   if (!explanation?.length) return null
 
   return (
-    <div className="mt-4 border-t pt-4">
-      <h3 className="text-sm font-semibold text-slate-700">Why the baseline risk looks this way</h3>
-      <ul className="mt-2 space-y-2 text-sm text-slate-600">
+    <div className="mt-5 border-t border-line pt-4">
+      <h3 className="label">Why the baseline risk looks this way</h3>
+      <ul className="mt-3 space-y-2 text-sm">
         {explanation.slice(0, 5).map(item => (
           <li key={item.feature} className="flex justify-between gap-3">
-            <span>{item.feature}</span>
-            <span className={item.direction === 'increases_failure_risk' ? 'text-red-600' : 'text-blue-600'}>
+            <span className="font-mono text-ink">{item.feature}</span>
+            <span className={item.direction === 'increases_failure_risk' ? 'text-danger' : 'text-info'}>
               {item.direction === 'increases_failure_risk' ? 'increases risk' : 'decreases risk'}
             </span>
           </li>
@@ -70,39 +75,39 @@ function SimulationResult({ result }) {
   const delta = Number(result.risk_delta || 0)
   const deltaPoints = Number(result.percentage_point_change || 0)
   const impact = delta < -0.001 ? 'Estimated risk decrease' : delta > 0.001 ? 'Estimated risk increase' : 'No material risk change'
-  const impactColor = delta < -0.001 ? 'text-emerald-700' : delta > 0.001 ? 'text-red-700' : 'text-slate-700'
+  const impactColor = delta < -0.001 ? 'text-success' : delta > 0.001 ? 'text-danger' : 'text-ink-muted'
   const intervention = interventionOptions[result.intervention?.field]
 
   return (
-    <section className="mt-6 rounded-lg border border-indigo-200 bg-indigo-50 p-5" aria-live="polite">
+    <section className="mt-6 animate-rise rounded-card border border-accent-2/30 bg-linear-to-br from-accent-2/10 via-surface-2 to-accent/5 p-5" aria-live="polite">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-sm font-semibold uppercase tracking-wide text-indigo-700">Optimization simulation</p>
-          <h2 className="mt-1 text-lg font-bold text-slate-900">{impact}</h2>
+          <p className="eyebrow text-accent-2">Optimization simulation</p>
+          <h2 className="mt-2 text-xl text-ink">{impact}</h2>
         </div>
-        <span className={`text-2xl font-bold ${impactColor}`}>{deltaPoints >= 0 ? '+' : ''}{deltaPoints.toFixed(1)} pp</span>
+        <span className={`stat text-3xl ${impactColor}`}>{deltaPoints >= 0 ? '+' : ''}{deltaPoints.toFixed(1)} pp</span>
       </div>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <div className="rounded bg-white p-3 shadow-sm">
-          <p className="text-xs font-medium uppercase text-slate-500">Baseline failure risk</p>
-          <p className="mt-1 text-xl font-semibold text-slate-900">{percent(result.baseline?.failure_probability)}</p>
+        <div className="inset-panel p-4">
+          <p className="label">Baseline failure risk</p>
+          <p className="stat mt-1 text-2xl">{percent(result.baseline?.failure_probability)}</p>
         </div>
-        <div className="rounded bg-white p-3 shadow-sm">
-          <p className="text-xs font-medium uppercase text-slate-500">Simulated failure risk</p>
-          <p className="mt-1 text-xl font-semibold text-slate-900">{percent(result.simulated?.failure_probability)}</p>
+        <div className="inset-panel p-4">
+          <p className="label">Simulated failure risk</p>
+          <p className="stat mt-1 text-2xl">{percent(result.simulated?.failure_probability)}</p>
         </div>
       </div>
 
-      <div className="mt-4 text-sm text-slate-700">
+      <div className="mt-4 text-sm text-ink-muted">
         <p>
-          Intervention: <span className="font-semibold">{intervention?.label || result.intervention?.field}</span>
-          {' '}from <span className="font-semibold">{Number(result.intervention?.original_value || 0)}</span>
-          {' '}to <span className="font-semibold">{Number(result.intervention?.simulated_value || 0)}</span>.
+          Intervention: <span className="font-semibold text-ink">{intervention?.label || result.intervention?.field}</span>
+          {' '}from <span className="stat">{Number(result.intervention?.original_value || 0)}</span>
+          {' '}to <span className="stat">{Number(result.intervention?.simulated_value || 0)}</span>.
         </p>
-        <p className="mt-1">Total files changed: {Number(result.simulated?.derived_features?.total_files_changed || 0)}</p>
+        <p className="mt-1">Total files changed: <span className="stat">{Number(result.simulated?.derived_features?.total_files_changed || 0)}</span></p>
       </div>
-      <p className="mt-4 text-xs text-slate-500">{result.disclaimer}</p>
+      <p className="mt-4 text-xs text-ink-faint">{result.disclaimer}</p>
     </section>
   )
 }
@@ -178,77 +183,77 @@ export default function WhatIfPage() {
 
   return (
     <div className="mx-auto max-w-5xl">
-      <h1 className="text-2xl font-bold text-slate-900">What-If Simulator</h1>
-      <p className="mt-1 text-slate-600">Explore a hypothetical build without saving anything to pipeline history.</p>
+      <PageHeader eyebrow="simulate" title="What-If Simulator">Explore a hypothetical build without saving anything to pipeline history.</PageHeader>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-[1fr,1.1fr]">
-        <section className="rounded-lg bg-white p-5 shadow">
-          <h2 className="font-semibold text-slate-900">Build inputs</h2>
-          <div className="mt-4 space-y-4">
-            <label className="block text-sm font-medium text-slate-700">
-              Source churn: {controls.srcChurn}
-              <input className="mt-1 w-full" type="range" min="0" max="2000" name="srcChurn" value={controls.srcChurn} onChange={update} />
+      <div className="grid gap-6 lg:grid-cols-[1fr_1.1fr]">
+        <section className="card p-5 sm:p-6">
+          <h2 className="text-lg text-ink">Build inputs</h2>
+          <div className="mt-5 space-y-5">
+            <label className="label flex flex-wrap justify-between gap-x-2">
+              Source churn <span className="stat text-sm text-accent">{controls.srcChurn}</span>
+              <input className="mt-2 w-full" type="range" min="0" max="2000" name="srcChurn" value={controls.srcChurn} onChange={update} />
             </label>
-            <label className="block text-sm font-medium text-slate-700">
-              Test churn: {controls.testChurn}
-              <input className="mt-1 w-full" type="range" min="0" max="2000" name="testChurn" value={controls.testChurn} onChange={update} />
+            <label className="label flex flex-wrap justify-between gap-x-2">
+              Test churn <span className="stat text-sm text-accent">{controls.testChurn}</span>
+              <input className="mt-2 w-full" type="range" min="0" max="2000" name="testChurn" value={controls.testChurn} onChange={update} />
             </label>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-3 items-end gap-3">
               {[
                 ['filesAdded', 'Files added'],
                 ['filesDeleted', 'Files deleted'],
                 ['filesModified', 'Files modified'],
               ].map(([name, label]) => (
-                <label key={name} className="text-sm font-medium text-slate-700">
+                <label key={name} className="label">
                   {label}
-                  <input className="mt-1 w-full rounded border border-slate-300 px-2 py-1" type="number" min="0" max="500" name={name} value={controls[name]} onChange={update} />
+                  <input className="field" type="number" min="0" max="500" name={name} value={controls[name]} onChange={update} />
                 </label>
               ))}
             </div>
-            <label className="block text-sm font-medium text-slate-700">
+            <label className="label block">
               Language
-              <select className="mt-1 w-full rounded border border-slate-300 p-2" name="language" value={controls.language} onChange={update}>
+              <select className="field" name="language" value={controls.language} onChange={update}>
                 {['ruby', 'java', 'python', 'javascript', 'go'].map(language => <option key={language}>{language}</option>)}
               </select>
             </label>
-            <label className="flex items-center gap-2 text-sm text-slate-700"><input type="checkbox" name="isPr" checked={controls.isPr} onChange={update} /> Pull request build</label>
-            <label className="flex items-center gap-2 text-sm text-slate-700"><input type="checkbox" name="previousFailed" checked={controls.previousFailed} onChange={update} /> Previous build failed</label>
+            <label className="flex items-center gap-2.5 text-sm text-ink"><input type="checkbox" name="isPr" checked={controls.isPr} onChange={update} className="size-4" /> Pull request build</label>
+            <label className="flex items-center gap-2.5 text-sm text-ink"><input type="checkbox" name="previousFailed" checked={controls.previousFailed} onChange={update} className="size-4" /> Previous build failed</label>
           </div>
         </section>
 
-        <section className="rounded-lg bg-white p-5 shadow">
-          <p className="text-sm font-medium text-slate-500">Live baseline failure probability</p>
-          <div className="mt-2"><RiskBadge probability={result?.failure_probability} /></div>
-          {result?.is_anomaly && <span className="mt-3 inline-block rounded bg-purple-100 px-2 py-1 text-sm text-purple-800">Unusual pre-build input profile — not a failure prediction</span>}
-          {error && <p className="mt-3 text-sm text-red-600" role="alert">{error}</p>}
-          <div className="mt-4 h-44">
+        <section className="card relative overflow-hidden p-5 sm:p-6">
+          <div className="pointer-events-none absolute -top-16 -right-16 size-48 rounded-full bg-accent-2/15 blur-3xl" />
+          <p className="label flex items-center gap-2"><span className="size-2 animate-pulse rounded-full bg-accent" />Live baseline failure probability</p>
+          <div className="mt-3"><RiskBadge probability={result?.failure_probability} /></div>
+          {result?.is_anomaly && <span className="chip chip-accent-2 mt-4 whitespace-normal">Unusual pre-build input profile — not a failure prediction</span>}
+          {error && <p className="mt-3 text-sm text-danger" role="alert">{error}</p>}
+          <div className="mt-5 h-44">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={history}><XAxis dataKey="change" /><YAxis domain={[0, 100]} /><Tooltip /><Line dataKey="probability" stroke="#4f46e5" dot={false} /></LineChart>
+              <LineChart data={history} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}><CartesianGrid stroke={chartColors.grid} vertical={false} /><XAxis dataKey="change" {...axisProps} /><YAxis domain={[0, 100]} {...axisProps} axisLine={false} /><Tooltip {...tooltipProps} /><Line dataKey="probability" stroke={chartColors.accent2} strokeWidth={2} dot={false} /></LineChart>
             </ResponsiveContainer>
           </div>
           <ExplanationList explanation={simulation?.baseline?.explanation} />
         </section>
       </div>
 
-      <section className="mt-6 rounded-lg bg-white p-5 shadow">
-        <h2 className="font-semibold text-slate-900">Try one intervention</h2>
-        <p className="mt-1 text-sm text-slate-600">Change one actionable code-change value and compare the model's simulated risk with this baseline.</p>
-        <div className="mt-4 grid gap-4 md:grid-cols-[1fr,1fr,auto] md:items-end">
-          <label className="text-sm font-medium text-slate-700">
+      <section className="card mt-6 p-5 sm:p-6">
+        <h2 className="text-lg text-ink">Try one intervention</h2>
+        <p className="mt-1 text-sm text-ink-muted">Change one actionable code-change value and compare the model's simulated risk with this baseline.</p>
+        <div className="mt-5 grid gap-4 md:grid-cols-[1fr_1fr_auto] md:items-end">
+          <label className="label">
             Intervention
-            <select className="mt-1 w-full rounded border border-slate-300 p-2" value={interventionField} onChange={chooseIntervention}>
+            <select className="field" value={interventionField} onChange={chooseIntervention}>
               {Object.entries(interventionOptions).map(([field, option]) => <option key={field} value={field}>{option.label}</option>)}
             </select>
           </label>
-          <label className="text-sm font-medium text-slate-700">
+          <label className="label">
             Simulated value (0–{selectedIntervention.max})
-            <input className="mt-1 w-full rounded border border-slate-300 p-2" type="number" min="0" max={selectedIntervention.max} value={interventionValue} onChange={event => { setInterventionValue(event.target.value); setSimulation(null); setSimulationError('') }} />
+            <input className="field" type="number" min="0" max={selectedIntervention.max} value={interventionValue} onChange={event => { setInterventionValue(event.target.value); setSimulation(null); setSimulationError('') }} />
           </label>
-          <button type="button" onClick={runSimulation} disabled={isSimulating} className="rounded bg-indigo-600 px-4 py-2 font-medium text-white disabled:cursor-not-allowed disabled:bg-indigo-300">
+          <button type="button" onClick={runSimulation} disabled={isSimulating} className="btn btn-primary">
             {isSimulating ? 'Simulating…' : 'Simulate optimization'}
           </button>
         </div>
-        {simulationError && <p className="mt-3 text-sm text-red-600" role="alert">{simulationError}</p>}
+        {simulationError && <p className="mt-3 text-sm text-danger" role="alert">{simulationError}</p>}
         <SimulationResult result={simulation} />
       </section>
     </div>
