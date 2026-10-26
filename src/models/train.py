@@ -17,15 +17,16 @@ import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.impute import SimpleImputer
 from sklearn.metrics import accuracy_score, f1_score, precision_recall_fscore_support, roc_auc_score
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import RandomizedSearchCV, StratifiedKFold, train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 from sklearn.tree import DecisionTreeClassifier
 from xgboost import XGBClassifier
+from lightgbm import LGBMClassifier
 
 from src.features.availability_guard import assert_features_available_for_prediction
-from src.features.engineer import engineer_features
-from src.features.schema import FEATURE_COLS, FEATURE_SOURCE_COLUMNS
+from src.features.engineer import HISTORY_AUX_COLS, add_rolling_history, engineer_features
+from src.features.schema import FEATURE_COLS, FEATURE_SOURCE_COLUMNS, HISTORY_FEATURE_COLS
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -56,12 +57,17 @@ def _random_forest() -> RandomForestClassifier:
 
 
 def _load_input(data_path: Path) -> pd.DataFrame:
-    """Load only the raw/processed columns needed for strict model features."""
+    """Load columns needed for strict model features, repo identity, and history aux columns."""
     if not data_path.exists():
         raise FileNotFoundError(
             f"Processed dataset not found: {data_path}. Run `python -m src.data.run_pipeline` first."
         )
-    columns = list(dict.fromkeys([TARGET_COLUMN, *FEATURE_SOURCE_COLUMNS]))
+    import pyarrow.parquet as pq
+    schema_cols = set(pq.read_schema(data_path).names)
+    columns = list(dict.fromkeys(
+        c for c in [TARGET_COLUMN, "gh_project_name", *FEATURE_SOURCE_COLUMNS, *HISTORY_AUX_COLS]
+        if c in schema_cols
+    ))
     return pd.read_parquet(data_path, columns=columns, engine="pyarrow")
 
 
@@ -168,6 +174,9 @@ def _persist_deployable(
 def _fit_fast_models(data_path: Path) -> dict[str, object]:
     """Fit the historical 200k random-split comparison set for development."""
     raw = _load_input(data_path)
+    # Sort chronologically so rolling history windows are correct, then sample.
+    raw = raw.sort_values(TIMESTAMP_COLUMN, kind="mergesort")
+    raw = add_rolling_history(raw, label_col=TARGET_COLUMN)
     if len(raw) > MAX_TRAINING_ROWS:
         raw = raw.sample(n=MAX_TRAINING_ROWS, random_state=RANDOM_STATE)
     target = raw[TARGET_COLUMN].eq("failed").astype(int)
@@ -192,6 +201,11 @@ def _fit_fast_models(data_path: Path) -> dict[str, object]:
             n_estimators=300, max_depth=8, learning_rate=0.05, subsample=0.8,
             colsample_bytree=0.8, scale_pos_weight=scale_pos_weight,
             eval_metric="logloss", random_state=RANDOM_STATE, n_jobs=-1, tree_method="hist",
+        ),
+        "lightgbm": LGBMClassifier(
+            n_estimators=300, max_depth=8, learning_rate=0.05, num_leaves=63,
+            subsample=0.8, colsample_bytree=0.8, scale_pos_weight=scale_pos_weight,
+            random_state=RANDOM_STATE, n_jobs=-1, verbose=-1,
         ),
     }
     ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -240,6 +254,9 @@ def _fit_full_temporal(data_path: Path) -> dict[str, object]:
     if timestamps.isna().any():
         raise ValueError("Full mode requires parseable gh_build_started_at timestamps.")
     ordered = raw.assign(**{TIMESTAMP_COLUMN: timestamps}).sort_values(TIMESTAMP_COLUMN, kind="mergesort")
+    # Rolling history must be computed on the full sorted dataset before splitting
+    # so that training rows' windows never reach into the held-out test period.
+    ordered = add_rolling_history(ordered, label_col=TARGET_COLUMN)
     split_index = int(len(ordered) * FULL_TRAIN_FRACTION)
     train_raw = ordered.iloc[:split_index].copy()
     test_raw = ordered.iloc[split_index:].copy()
@@ -291,19 +308,152 @@ def _fit_full_temporal(data_path: Path) -> dict[str, object]:
     return {"random_forest": model}
 
 
+_RF_PARAM_DIST = {
+    "n_estimators": [100, 200, 300, 500],
+    "max_depth": [10, 15, 20, 25, None],
+    "min_samples_split": [2, 5, 10],
+    "min_samples_leaf": [1, 2, 4],
+    "max_features": ["sqrt", "log2", 0.2, 0.3],
+    "class_weight": ["balanced", "balanced_subsample"],
+}
+
+_XGB_PARAM_DIST = {
+    "n_estimators": [200, 300, 400, 500],
+    "max_depth": [4, 6, 8, 10],
+    "learning_rate": [0.01, 0.05, 0.1, 0.2],
+    "subsample": [0.7, 0.8, 0.9],
+    "colsample_bytree": [0.7, 0.8, 0.9],
+    "min_child_weight": [1, 3, 5],
+    "gamma": [0, 0.1, 0.3],
+    "reg_alpha": [0, 0.1, 1.0],
+    "reg_lambda": [0.5, 1.0, 2.0],
+}
+
+_LGBM_PARAM_DIST = {
+    "n_estimators": [200, 300, 400, 500],
+    "max_depth": [6, 8, 10, -1],
+    "num_leaves": [31, 63, 127, 255],
+    "learning_rate": [0.01, 0.05, 0.1, 0.2],
+    "subsample": [0.7, 0.8, 0.9],
+    "colsample_bytree": [0.7, 0.8, 0.9],
+    "min_child_samples": [10, 20, 50],
+    "reg_alpha": [0, 0.1, 1.0],
+    "reg_lambda": [0, 0.1, 1.0],
+}
+
+
+def _tune_fast_models(data_path: Path) -> dict[str, object]:
+    """Hyperparameter search (RandomizedSearchCV, F1, 3-fold) on the 200k dev split."""
+    raw = _load_input(data_path)
+    raw = raw.sort_values(TIMESTAMP_COLUMN, kind="mergesort")
+    raw = add_rolling_history(raw, label_col=TARGET_COLUMN)
+    if len(raw) > MAX_TRAINING_ROWS:
+        raw = raw.sample(n=MAX_TRAINING_ROWS, random_state=RANDOM_STATE)
+
+    target = raw[TARGET_COLUMN].eq("failed").astype(int)
+    train_raw, test_raw = train_test_split(
+        raw, test_size=0.2, stratify=target, random_state=RANDOM_STATE
+    )
+    x_train, x_test, y_train, y_test, imputer, encoders = _engineer_split(train_raw, test_raw)
+
+    class_counts = y_train.value_counts()
+    scale_pos_weight = float(class_counts[0] / class_counts[1])
+    cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=RANDOM_STATE)
+
+    print("Tuning Random Forest (n_iter=25, cv=3, scoring=f1) ...")
+    rf_base = RandomForestClassifier(random_state=RANDOM_STATE, n_jobs=-1)
+    rf_search = RandomizedSearchCV(
+        rf_base, _RF_PARAM_DIST, n_iter=25, scoring="f1", cv=cv,
+        random_state=RANDOM_STATE, n_jobs=-1, verbose=1,
+    )
+    rf_search.fit(x_train, y_train)
+    print(f"  Best RF params: {rf_search.best_params_}")
+    print(f"  Best RF CV F1:  {rf_search.best_score_:.4f}")
+
+    print("Tuning XGBoost (n_iter=25, cv=3, scoring=f1) ...")
+    xgb_base = XGBClassifier(
+        scale_pos_weight=scale_pos_weight, eval_metric="logloss",
+        random_state=RANDOM_STATE, n_jobs=-1, tree_method="hist",
+    )
+    xgb_search = RandomizedSearchCV(
+        xgb_base, _XGB_PARAM_DIST, n_iter=25, scoring="f1", cv=cv,
+        random_state=RANDOM_STATE, n_jobs=-1, verbose=1,
+    )
+    xgb_search.fit(x_train, y_train)
+    print(f"  Best XGB params: {xgb_search.best_params_}")
+    print(f"  Best XGB CV F1:  {xgb_search.best_score_:.4f}")
+
+    print("Tuning LightGBM (n_iter=25, cv=3, scoring=f1) ...")
+    lgbm_base = LGBMClassifier(
+        scale_pos_weight=scale_pos_weight,
+        random_state=RANDOM_STATE, n_jobs=-1, verbose=-1,
+    )
+    lgbm_search = RandomizedSearchCV(
+        lgbm_base, _LGBM_PARAM_DIST, n_iter=25, scoring="f1", cv=cv,
+        random_state=RANDOM_STATE, n_jobs=-1, verbose=1,
+    )
+    lgbm_search.fit(x_train, y_train)
+    print(f"  Best LGBM params: {lgbm_search.best_params_}")
+    print(f"  Best LGBM CV F1:  {lgbm_search.best_score_:.4f}")
+
+    # DT and SVM keep their existing params for the comparison table.
+    scaler = StandardScaler().fit(x_train)
+    dt = DecisionTreeClassifier(
+        max_depth=12, min_samples_split=5, min_samples_leaf=2,
+        class_weight="balanced", random_state=RANDOM_STATE,
+    ).fit(x_train, y_train)
+    svm_rows = min(MAX_SVM_TRAINING_ROWS, len(x_train))
+    svm = SVC(
+        kernel="rbf", C=10, gamma="scale", probability=True,
+        class_weight="balanced", random_state=RANDOM_STATE,
+    ).fit(scaler.transform(x_train[:svm_rows]), y_train.iloc[:svm_rows])
+
+    ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
+    models: dict[str, object] = {
+        "random_forest": rf_search.best_estimator_,
+        "xgboost": xgb_search.best_estimator_,
+        "lightgbm": lgbm_search.best_estimator_,
+        "decision_tree": dt,
+        "svm": svm,
+    }
+    for name, model in models.items():
+        joblib.dump(model, ARTIFACTS_DIR / f"{name}.joblib")
+
+    _persist_deployable(
+        rf_search.best_estimator_, imputer, scaler, encoders,
+        mode="tune",
+        threshold=0.5,
+        threshold_policy={"name": "default", "selection_rule": "tune mode uses 0.50"},
+        metadata={
+            "sample_rows": len(raw),
+            "split": "stratified_random",
+            "rf_best_params": rf_search.best_params_,
+            "rf_best_cv_f1": rf_search.best_score_,
+            "xgb_best_params": xgb_search.best_params_,
+            "xgb_best_cv_f1": xgb_search.best_score_,
+            "lgbm_best_params": lgbm_search.best_params_,
+            "lgbm_best_cv_f1": lgbm_search.best_score_,
+        },
+    )
+    print("Tune mode complete: best RF, XGBoost, and LightGBM persisted.")
+    return models
+
+
 def train_models(data_path: Path = DATA_PATH, mode: str = "fast") -> dict[str, object]:
-    """Train models in explicit ``fast`` or deployable ``full`` mode."""
+    """Train models in explicit ``fast``, ``tune``, or deployable ``full`` mode."""
     assert_features_available_for_prediction(FEATURE_COLS)
     if mode == "fast":
         return _fit_fast_models(data_path)
+    if mode == "tune":
+        return _tune_fast_models(data_path)
     if mode == "full":
         return _fit_full_temporal(data_path)
-    raise ValueError("mode must be 'fast' or 'full'.")
+    raise ValueError("mode must be 'fast', 'tune', or 'full'.")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Train CI/CD failure models.")
-    parser.add_argument("--mode", choices=("fast", "full"), default="fast")
+    parser.add_argument("--mode", choices=("fast", "tune", "full"), default="fast")
     args = parser.parse_args()
     train_models(mode=args.mode)
 

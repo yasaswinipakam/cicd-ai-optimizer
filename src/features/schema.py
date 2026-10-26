@@ -34,6 +34,10 @@ DIRECT_PREBUILD_FEATURE_COLS = [
     "gh_repo_age",
     "gh_repo_num_commits",
     "tr_build_number",
+    # Previously unused pre-build columns — all available at trigger time.
+    "gh_num_commits_in_push",
+    "gh_num_pr_comments",
+    "gh_num_issue_comments",
 ]
 
 DERIVED_PREBUILD_FEATURE_COLS = [
@@ -50,9 +54,26 @@ DERIVED_PREBUILD_FEATURE_COLS = [
     "month",
     "is_weekend",
     "is_night",
+    # Rolling per-repo failure history — finish-time-safe heap protocol.
+    # Cold-start default is COLD_START_RATE (empirical global failure prior).
+    "repo_fail_rate_last5",
+    "repo_fail_rate_last20",
+    "repo_prior_fail_rate",
+    # Streak and gap features — also finish-time-safe. Cold-start default is 0.0.
+    "repo_streak_fails",
+    "repo_builds_since_success",
+    "repo_hours_since_last_build",
 ]
 
 FEATURE_COLS = DIRECT_PREBUILD_FEATURE_COLS + DERIVED_PREBUILD_FEATURE_COLS
+
+# Names of the three rolling-history features (subset of DERIVED_PREBUILD_FEATURE_COLS).
+# Callers that need to pre-compute them before splitting can import this list.
+HISTORY_FEATURE_COLS = [
+    "repo_fail_rate_last5",
+    "repo_fail_rate_last20",
+    "repo_prior_fail_rate",
+]
 
 # Minimal raw/processed columns needed to construct every strict feature.  All
 # training/evaluation loaders import this list instead of silently dropping newly
@@ -70,4 +91,9 @@ FEATURE_SOURCE_COLUMNS = [
     "month",
     "is_weekend",
     "is_night",
+    # Raw columns for the newly added direct pre-build features (deduped at load
+    # time via dict.fromkeys, so repeats from DIRECT_PREBUILD_FEATURE_COLS are fine).
+    "gh_num_commits_in_push",
+    "gh_num_pr_comments",
+    "gh_num_issue_comments",
 ]

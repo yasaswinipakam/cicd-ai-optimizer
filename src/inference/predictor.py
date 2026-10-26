@@ -14,7 +14,7 @@ from src.models.clustering import RootCauseClusterer
 from src.models.suggestions import get_suggestion
 from src.inference.explainer import PredictionExplainer
 from src.inference.calibration import ProbabilityCalibrator
-from src.features.schema import DIRECT_PREBUILD_FEATURE_COLS
+from src.features.schema import DIRECT_PREBUILD_FEATURE_COLS, HISTORY_FEATURE_COLS
 
 
 class CICDPredictor:
@@ -124,6 +124,11 @@ class CICDPredictor:
             "is_weekend": is_weekend,
             "is_night": is_night,
         }
+        # Rolling history features — caller supplies these from the build-history DB.
+        # Default to 0.0 (cold-start) when the API payload omits them.
+        for col in HISTORY_FEATURE_COLS:
+            row[col] = self._number(raw.get(col), 0.0)
+
         # Reindexing enforces the training schema and supplies defaults if it expands later.
         return pd.DataFrame([row]).reindex(columns=self.feature_cols, fill_value=0.0)
 

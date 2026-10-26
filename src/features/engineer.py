@@ -1,8 +1,10 @@
 """Leak-free feature engineering for CI/CD build failure prediction."""
 
+import heapq
 from pathlib import Path
 
 import joblib
+import numpy as np
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder
 
@@ -58,6 +60,199 @@ def _add_time_features(df: pd.DataFrame) -> None:
     df["month"] = timestamp.dt.month
     df["is_weekend"] = timestamp.dt.dayofweek.isin([5, 6])
     df["is_night"] = timestamp.dt.hour.isin(range(0, 6))
+
+
+HISTORY_COLS = ("repo_fail_rate_last5", "repo_fail_rate_last20", "repo_prior_fail_rate")
+STREAK_COLS = ("repo_streak_fails", "repo_builds_since_success", "repo_hours_since_last_build")
+
+# Auxiliary columns used by add_rolling_history to compute finish-time-safe windows.
+# tr_duration is a post-build field of PRIOR builds used to determine when those
+# builds completed — it is never a feature of the current build being scored.
+HISTORY_AUX_COLS = ("tr_build_id", "tr_duration")
+
+# Prior used for cold-start rows (no prior completed builds for this repo).
+# Set to the empirical TravisTorrent global failure rate (~35%) rather than 0.0,
+# which would incorrectly signal "this repo never fails."
+COLD_START_RATE: float = 0.35
+
+
+def _safe_history_for_repo(
+    start_ns_arr: np.ndarray,
+    finish_ns_arr: np.ndarray,
+    failed_arr: np.ndarray,
+    build_id_arr: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Heap-based finish-time-safe history for one repository's build sequence.
+
+    A build contributes to history only after its last job has finished AND
+    strictly before the current build's trigger time.  This matches the
+    Phase-1 rigor protocol's add_safe_history semantics.
+
+    Returns six arrays: rate5, rate20, rate_prior, streak_fails,
+    builds_since_success, hours_since_last_build.
+    """
+    n = len(start_ns_arr)
+    rate5 = np.full(n, COLD_START_RATE)
+    rate20 = np.full(n, COLD_START_RATE)
+    rate_prior = np.full(n, COLD_START_RATE)
+    streak_fails = np.zeros(n)
+    builds_since_success = np.zeros(n)
+    hours_since_last = np.zeros(n)
+
+    pending: list[tuple[int, int, int]] = []  # (finish_ns, build_id, failed)
+    completed: list[int] = []
+    total_failed = 0
+    current_streak = 0
+    last_success_idx = -1   # index into completed; -1 = no success yet
+    last_finish_ns = 0      # max finish_ns of all drained builds
+
+    for i in range(n):
+        t_start = int(start_ns_arr[i])
+
+        # Drain all builds that finished strictly before this build started.
+        while pending and pending[0][0] < t_start:
+            fin_ns, _, label = heapq.heappop(pending)
+            completed.append(label)
+            total_failed += label
+            if label == 0:
+                current_streak = 0
+                last_success_idx = len(completed) - 1
+            else:
+                current_streak += 1
+            if fin_ns > last_finish_ns:
+                last_finish_ns = fin_ns
+
+        n_done = len(completed)
+        if n_done > 0:
+            rate5[i] = float(np.mean(completed[-5:]))
+            rate20[i] = float(np.mean(completed[-20:]))
+            rate_prior[i] = total_failed / n_done
+            streak_fails[i] = float(current_streak)
+            builds_since_success[i] = float(
+                n_done - 1 - last_success_idx if last_success_idx >= 0 else n_done
+            )
+            hours_since_last[i] = max(0.0, (t_start - last_finish_ns) / 3_600_000_000_000.0)
+
+        heapq.heappush(pending, (int(finish_ns_arr[i]), int(build_id_arr[i]), int(failed_arr[i])))
+
+    return rate5, rate20, rate_prior, streak_fails, builds_since_success, hours_since_last
+
+
+def add_rolling_history(
+    df: pd.DataFrame,
+    label_col: str = "tr_status",
+    duration_col: str = "tr_duration",
+    build_id_col: str = "tr_build_id",
+) -> pd.DataFrame:
+    """Add per-repo rolling failure-rate features with finish-time safety.
+
+    When *duration_col* and *build_id_col* are present the function uses a
+    heap keyed by each build's finish time (start + duration), so only builds
+    that completed before the current build started contribute to the window.
+    This matches the Phase-1 rigor protocol and prevents concurrent-build
+    leakage that shift(1) alone cannot prevent.
+
+    Must be called on the full chronologically-sorted dataset BEFORE any split.
+    Cold-start default (no eligible prior builds) is 0.0.
+    """
+    out = df.copy()
+    for col in (*HISTORY_COLS, *STREAK_COLS):
+        out[col] = 0.0
+
+    has_aux = (
+        duration_col in out.columns
+        and build_id_col in out.columns
+        and "gh_build_started_at" in out.columns
+    )
+
+    if not has_aux:
+        # Fallback when auxiliary columns are absent (live inference path).
+        # shift(1) on start-time order is sufficient for the cold-start / single-
+        # row inference case; concurrent-build leakage only affects batch training.
+        _FAIL_TMP = "__failed_tmp__"
+        out[_FAIL_TMP] = out[label_col].eq("failed").astype(float)
+        out["repo_fail_rate_last5"] = (
+            out.groupby("gh_project_name")[_FAIL_TMP]
+            .transform(lambda x: x.shift(1).rolling(5, min_periods=1).mean())
+            .fillna(COLD_START_RATE)
+        )
+        out["repo_fail_rate_last20"] = (
+            out.groupby("gh_project_name")[_FAIL_TMP]
+            .transform(lambda x: x.shift(1).rolling(20, min_periods=1).mean())
+            .fillna(COLD_START_RATE)
+        )
+        out["repo_prior_fail_rate"] = (
+            out.groupby("gh_project_name")[_FAIL_TMP]
+            .transform(lambda x: x.expanding().mean().shift(1))
+            .fillna(COLD_START_RATE)
+        )
+        # Streak / gap features default to 0 in the no-aux fallback path.
+        out.drop(columns=[_FAIL_TMP], inplace=True)
+        return out
+
+    # Compute per-build finish time: start_ns + duration_ns.
+    # For missing/zero/negative durations use 0 (conservative: treats build as
+    # finishing instantly; these are edge cases in the TravisTorrent data).
+    start_ts = pd.to_datetime(out["gh_build_started_at"], utc=True, errors="coerce")
+    start_ns = start_ts.astype("int64")
+    duration_s = pd.to_numeric(out[duration_col], errors="coerce").clip(lower=0).fillna(0)
+    finished_ns = start_ns + (duration_s * 1_000_000_000).astype("int64")
+
+    out["_start_ns_tmp"] = start_ns
+    out["_finished_ns_tmp"] = finished_ns
+
+    # Build-level deduplication: one entry per build using max finish time and
+    # OR-of-failures (a build fails if any job fails), matching Phase-1 collapse.
+    out["_build_finished_ns_tmp"] = out.groupby(build_id_col)["_finished_ns_tmp"].transform("max")
+
+    builds = (
+        out.groupby(build_id_col, sort=False)
+        .agg(
+            _repo=("gh_project_name", "first"),
+            _start_ns=("_start_ns_tmp", "first"),
+            _finished_ns=("_build_finished_ns_tmp", "first"),
+            _failed=(label_col, lambda x: int(x.eq("failed").any())),
+        )
+        .reset_index()
+    )
+
+    # Allocate result arrays indexed by build_id.
+    idx = builds[build_id_col]
+    build_rate5 = pd.Series(COLD_START_RATE, index=idx)
+    build_rate20 = pd.Series(COLD_START_RATE, index=idx)
+    build_rate_prior = pd.Series(COLD_START_RATE, index=idx)
+    build_streak = pd.Series(0.0, index=idx)
+    build_since_success = pd.Series(0.0, index=idx)
+    build_hours_since = pd.Series(0.0, index=idx)
+
+    for _, repo_builds in builds.groupby("_repo"):
+        sorted_b = repo_builds.sort_values(["_start_ns", build_id_col], kind="mergesort")
+        r5, r20, rp, streak, since_suc, hrs = _safe_history_for_repo(
+            sorted_b["_start_ns"].to_numpy(),
+            sorted_b["_finished_ns"].to_numpy(),
+            sorted_b["_failed"].to_numpy(),
+            sorted_b[build_id_col].to_numpy(),
+        )
+        build_rate5.loc[sorted_b[build_id_col]] = r5
+        build_rate20.loc[sorted_b[build_id_col]] = r20
+        build_rate_prior.loc[sorted_b[build_id_col]] = rp
+        build_streak.loc[sorted_b[build_id_col]] = streak
+        build_since_success.loc[sorted_b[build_id_col]] = since_suc
+        build_hours_since.loc[sorted_b[build_id_col]] = hrs
+
+    # Map build-level history back to job-level rows.
+    out["repo_fail_rate_last5"] = out[build_id_col].map(build_rate5).fillna(COLD_START_RATE)
+    out["repo_fail_rate_last20"] = out[build_id_col].map(build_rate20).fillna(COLD_START_RATE)
+    out["repo_prior_fail_rate"] = out[build_id_col].map(build_rate_prior).fillna(COLD_START_RATE)
+    out["repo_streak_fails"] = out[build_id_col].map(build_streak).fillna(0.0)
+    out["repo_builds_since_success"] = out[build_id_col].map(build_since_success).fillna(0.0)
+    out["repo_hours_since_last_build"] = out[build_id_col].map(build_hours_since).fillna(0.0)
+
+    out.drop(
+        columns=["_start_ns_tmp", "_finished_ns_tmp", "_build_finished_ns_tmp"],
+        inplace=True,
+    )
+    return out
 
 
 def engineer_features(
@@ -125,6 +320,11 @@ def engineer_features(
         engineered[column] = engineered[column].fillna(False).astype(int)
     for column in ("hour", "day_of_week", "month"):
         engineered[column] = _numeric_column(engineered, column).astype(int)
+
+    # Rolling history + streak features: pass through pre-computed values when
+    # present, or default to 0.0 (cold-start / live inference without history).
+    for column in (*HISTORY_COLS, *STREAK_COLS):
+        engineered[column] = _numeric_column(engineered, column)
 
     if save_encoders:
         encoder_path.parent.mkdir(parents=True, exist_ok=True)

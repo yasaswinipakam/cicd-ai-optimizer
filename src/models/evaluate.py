@@ -33,12 +33,12 @@ from sklearn.metrics import (
 from sklearn.model_selection import cross_val_score, train_test_split
 from sklearn.pipeline import Pipeline
 
-from src.features.engineer import engineer_features
-from src.models.train import ARTIFACTS_DIR, DATA_PATH, MAX_TRAINING_ROWS, RANDOM_STATE
+from src.features.engineer import HISTORY_AUX_COLS, add_rolling_history, engineer_features
+from src.models.train import ARTIFACTS_DIR, DATA_PATH, MAX_TRAINING_ROWS, RANDOM_STATE, TARGET_COLUMN, TIMESTAMP_COLUMN
 
 
 FIGURES_DIR = Path(__file__).resolve().parents[2] / "reports" / "figures"
-MODEL_NAMES = ("random_forest", "decision_tree", "svm", "xgboost")
+MODEL_NAMES = ("random_forest", "decision_tree", "svm", "xgboost", "lightgbm")
 METRIC_COLUMNS = ("Accuracy", "Precision", "Recall", "F1", "AUC")
 # Keep CV process-safe on restricted hosts; individual estimators retain their configured parallelism.
 CV_N_JOBS = int(os.getenv("CV_N_JOBS", "1"))
@@ -66,12 +66,20 @@ def _recreate_split(data_path: Path, feature_columns: list[str], encoders: dict)
         raise FileNotFoundError(
             f"Processed dataset not found: {data_path}. Run the data pipeline first."
         )
-    df = pd.read_parquet(data_path, engine="pyarrow")
-    df, _ = engineer_features(df, encoders=encoders, fit_encoders=False, save_encoders=False)
+    import pyarrow.parquet as pq
+    schema_cols = set(pq.read_schema(data_path).names)
+    load_cols = [c for c in [*feature_columns, TARGET_COLUMN, TIMESTAMP_COLUMN, "gh_project_name", *HISTORY_AUX_COLS] if c in schema_cols]
+    df = pd.read_parquet(data_path, columns=load_cols, engine="pyarrow")
+    # Sort chronologically and compute rolling history on the full dataset before
+    # sampling, mirroring how train.py prepares data.  This ensures test rows
+    # receive their correct per-repo history rather than the cold-start default.
+    df = df.sort_values(TIMESTAMP_COLUMN, kind="mergesort")
+    df = add_rolling_history(df, label_col=TARGET_COLUMN)
     if len(df) > MAX_TRAINING_ROWS:
         df = df.sample(n=MAX_TRAINING_ROWS, random_state=RANDOM_STATE)
 
-    target = df["tr_status"].eq("failed").astype(int)
+    df, _ = engineer_features(df, encoders=encoders, fit_encoders=False, save_encoders=False)
+    target = df[TARGET_COLUMN].eq("failed").astype(int)
     x_train, x_test, y_train, y_test = train_test_split(
         df[feature_columns],
         target,

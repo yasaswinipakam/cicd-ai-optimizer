@@ -4,14 +4,16 @@ This project analyzes CI/CD build data to predict build failures and support pip
 
 ## Current validated model
 
-The deployable model is a Random Forest using 34 availability-guarded pre-build
-features. Its probability layer is calibrated chronologically: the model was fit
-on the earliest 72% of the 3.56M valid builds, sigmoid/Platt scaling was fit on
-the following 8%, and the final 20% remained untouched for evaluation. Sigmoid
-calibration improved Brier score from 0.1787 to 0.1496 and expected calibration
-error from 0.1691 to 0.0291 while preserving the selected review tier relative
-to the same base model. The active policy is a non-blocking, approximately 15%
-top-risk **shadow** tier; it is not an autonomous pass/fail gate. See
+The legacy deployable model is a Random Forest using 34 availability-guarded
+pre-build features. Its prior calibration experiment fitted the model on the
+earliest 72% of the 3.56M job rows and sigmoid/Platt scaling on the following
+8%. Although the cutoff itself was validation-derived, the recorded activation
+rule also inspected final-20% test metrics; consequently that final period must
+be treated as a labelled development test, not an untouched confirmation set.
+The active-artifact metadata currently records an uncalibrated full model with a
+0.40 threshold, while a separate sigmoid calibrator artifact and historical
+0.287911 policy report also exist. Do not treat either as an active calibrated
+policy until the Phase-1 versioned evaluation reconciles them. See
 [`reports/chronological_calibration_analysis.md`](reports/chronological_calibration_analysis.md).
 
 `fast` mode retains the 200,000-row stratified random-split workflow only for
