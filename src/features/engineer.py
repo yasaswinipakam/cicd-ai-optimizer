@@ -81,12 +81,14 @@ def _safe_history_for_repo(
     finish_ns_arr: np.ndarray,
     failed_arr: np.ndarray,
     build_id_arr: np.ndarray,
+    buffer_ns: int = 0,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Heap-based finish-time-safe history for one repository's build sequence.
 
-    A build contributes to history only after its last job has finished AND
-    strictly before the current build's trigger time.  This matches the
-    Phase-1 rigor protocol's add_safe_history semantics.
+    A build contributes to history only after its last job has finished strictly
+    before ``current_start - buffer_ns``.  buffer_ns=0 matches the Phase-1
+    rigor protocol's 0h sensitivity; pass 3_600_000_000_000 for the 1h buffer
+    or 21_600_000_000_000 for the 6h buffer used in the Phase-1 sensitivity study.
 
     Returns six arrays: rate5, rate20, rate_prior, streak_fails,
     builds_since_success, hours_since_last_build.
@@ -108,9 +110,10 @@ def _safe_history_for_repo(
 
     for i in range(n):
         t_start = int(start_ns_arr[i])
+        cutoff = t_start - buffer_ns
 
-        # Drain all builds that finished strictly before this build started.
-        while pending and pending[0][0] < t_start:
+        # Drain all builds that finished strictly before the cutoff.
+        while pending and pending[0][0] < cutoff:
             fin_ns, _, label = heapq.heappop(pending)
             completed.append(label)
             total_failed += label
@@ -143,17 +146,21 @@ def add_rolling_history(
     label_col: str = "tr_status",
     duration_col: str = "tr_duration",
     build_id_col: str = "tr_build_id",
+    finish_buffer_s: float = 0.0,
 ) -> pd.DataFrame:
     """Add per-repo rolling failure-rate features with finish-time safety.
 
     When *duration_col* and *build_id_col* are present the function uses a
     heap keyed by each build's finish time (start + duration), so only builds
-    that completed before the current build started contribute to the window.
-    This matches the Phase-1 rigor protocol and prevents concurrent-build
-    leakage that shift(1) alone cannot prevent.
+    that completed before ``current_start - finish_buffer_s`` contribute to the
+    window.  finish_buffer_s=0 matches the Phase-1 0h sensitivity; pass 3600
+    or 21600 for the 1h / 6h sensitivity buffers from the Phase-1 study.
+
+    Missing or non-positive durations fall back to the per-repo p95 duration,
+    then the global p95, rather than zero.  Using zero would make those builds
+    appear to finish instantly, leaking their outcomes into concurrent builds.
 
     Must be called on the full chronologically-sorted dataset BEFORE any split.
-    Cold-start default (no eligible prior builds) is 0.0.
     """
     out = df.copy()
     for col in (*HISTORY_COLS, *STREAK_COLS):
@@ -191,11 +198,27 @@ def add_rolling_history(
         return out
 
     # Compute per-build finish time: start_ns + duration_ns.
-    # For missing/zero/negative durations use 0 (conservative: treats build as
-    # finishing instantly; these are edge cases in the TravisTorrent data).
+    # Missing/zero/negative durations fall back to the per-repo p95, then the
+    # global p95.  Using 0 would make those builds appear to finish instantly,
+    # allowing their outcomes to leak into concurrent builds' history windows.
     start_ts = pd.to_datetime(out["gh_build_started_at"], utc=True, errors="coerce")
     start_ns = start_ts.astype("int64")
-    duration_s = pd.to_numeric(out[duration_col], errors="coerce").clip(lower=0).fillna(0)
+    duration_raw = pd.to_numeric(out[duration_col], errors="coerce")
+    pos_mask = duration_raw > 0
+
+    # Per-repo p95 from strictly-positive durations in the supplied dataset.
+    # This is an approximation when the dataset spans train+test; for a fallback
+    # that only affects data-quality edge cases the bias is negligible.
+    repo_p95: pd.Series = (
+        duration_raw[pos_mask]
+        .groupby(out.loc[pos_mask, "gh_project_name"])
+        .quantile(0.95)
+        if pos_mask.any()
+        else pd.Series(dtype=float)
+    )
+    global_p95_s = float(duration_raw[pos_mask].quantile(0.95)) if pos_mask.any() else 3600.0
+    duration_fallback = out["gh_project_name"].map(repo_p95).fillna(global_p95_s)
+    duration_s = duration_raw.where(pos_mask, duration_fallback)
     finished_ns = start_ns + (duration_s * 1_000_000_000).astype("int64")
 
     out["_start_ns_tmp"] = start_ns
@@ -225,6 +248,7 @@ def add_rolling_history(
     build_since_success = pd.Series(0.0, index=idx)
     build_hours_since = pd.Series(0.0, index=idx)
 
+    buffer_ns = int(finish_buffer_s * 1_000_000_000)
     for _, repo_builds in builds.groupby("_repo"):
         sorted_b = repo_builds.sort_values(["_start_ns", build_id_col], kind="mergesort")
         r5, r20, rp, streak, since_suc, hrs = _safe_history_for_repo(
@@ -232,6 +256,7 @@ def add_rolling_history(
             sorted_b["_finished_ns"].to_numpy(),
             sorted_b["_failed"].to_numpy(),
             sorted_b[build_id_col].to_numpy(),
+            buffer_ns=buffer_ns,
         )
         build_rate5.loc[sorted_b[build_id_col]] = r5
         build_rate20.loc[sorted_b[build_id_col]] = r20

@@ -345,7 +345,14 @@ _LGBM_PARAM_DIST = {
 
 
 def _tune_fast_models(data_path: Path) -> dict[str, object]:
-    """Hyperparameter search (RandomizedSearchCV, F1, 3-fold) on the 200k dev split."""
+    """Hyperparameter search on a randomly-sampled 200k dev split.
+
+    WARNING — development reference only.  The 200k subset is drawn by random
+    sample, so chronological order is not preserved after sampling.  The CV
+    folds here (StratifiedKFold, shuffle=False, applied to the already-random
+    sample) do NOT constitute a valid chronological evaluation.  Selected
+    hyperparameters are starting points for --mode full, not performance claims.
+    """
     raw = _load_input(data_path)
     raw = raw.sort_values(TIMESTAMP_COLUMN, kind="mergesort")
     raw = add_rolling_history(raw, label_col=TARGET_COLUMN)
@@ -360,7 +367,9 @@ def _tune_fast_models(data_path: Path) -> dict[str, object]:
 
     class_counts = y_train.value_counts()
     scale_pos_weight = float(class_counts[0] / class_counts[1])
-    cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=RANDOM_STATE)
+    # shuffle=False: do not actively mix future/past rows on top of the already-
+    # random sample. Still not chronological — see function docstring.
+    cv = StratifiedKFold(n_splits=3, shuffle=False)
 
     print("Tuning Random Forest (n_iter=25, cv=3, scoring=f1) ...")
     rf_base = RandomForestClassifier(random_state=RANDOM_STATE, n_jobs=-1)
