@@ -60,7 +60,7 @@ def _load_artifacts() -> tuple[dict[str, object], dict[str, object]]:
     return models, joblib.load(ARTIFACTS_DIR / "preprocessing.joblib")
 
 
-def _recreate_split(data_path: Path, feature_columns: list[str], encoders: dict):
+def _recreate_split(data_path: Path, feature_columns: list[str], encoders: dict, cold_start_prior: float):
     """Recreate training's exact capped 80/20 stratified split."""
     if not data_path.exists():
         raise FileNotFoundError(
@@ -78,7 +78,9 @@ def _recreate_split(data_path: Path, feature_columns: list[str], encoders: dict)
     if len(df) > MAX_TRAINING_ROWS:
         df = df.sample(n=MAX_TRAINING_ROWS, random_state=RANDOM_STATE)
 
-    df, _ = engineer_features(df, encoders=encoders, fit_encoders=False, save_encoders=False)
+    df, _ = engineer_features(
+        df, encoders=encoders, fit_encoders=False, save_encoders=False, cold_start_prior=cold_start_prior
+    )
     target = df[TARGET_COLUMN].eq("failed").astype(int)
     x_train, x_test, y_train, y_test = train_test_split(
         df[feature_columns],
@@ -161,7 +163,7 @@ def evaluate_models(data_path: Path = DATA_PATH) -> pd.DataFrame:
     models, preprocessing = _load_artifacts()
     encoders = joblib.load(ARTIFACTS_DIR / "encoders.joblib")
     feature_columns = preprocessing["feature_cols"]
-    x_train, x_test, y_train, y_test = _recreate_split(data_path, feature_columns, encoders)
+    x_train, x_test, y_train, y_test = _recreate_split(data_path, feature_columns, encoders, preprocessing["cold_start_prior"])
     imputer = preprocessing["imputer"]
     x_test_imputed = imputer.transform(x_test)
 

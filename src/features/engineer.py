@@ -70,10 +70,17 @@ STREAK_COLS = ("repo_streak_fails", "repo_builds_since_success", "repo_hours_sin
 # builds completed — it is never a feature of the current build being scored.
 HISTORY_AUX_COLS = ("tr_build_id", "tr_duration")
 
-# Prior used for cold-start rows (no prior completed builds for this repo).
-# Set to the empirical TravisTorrent global failure rate (~35%) rather than 0.0,
-# which would incorrectly signal "this repo never fails."
-COLD_START_RATE: float = 0.35
+def training_failure_prior(train: pd.DataFrame, label_col: str = "tr_status", build_id_col: str = "tr_build_id") -> float:
+    """Build-level failure rate of the training rows: the cold-start history fill.
+
+    Rate features are NaN until a repository has a completed build; they are
+    filled with this value, derived from the training split only, never 0.0
+    (which would signal "this repo never fails") and never a global constant.
+    """
+    failed = train[label_col].eq("failed")
+    if build_id_col in train.columns:
+        failed = failed.groupby(train[build_id_col]).any()
+    return float(failed.mean())
 
 
 def _safe_history_for_repo(
@@ -94,9 +101,9 @@ def _safe_history_for_repo(
     builds_since_success, hours_since_last_build.
     """
     n = len(start_ns_arr)
-    rate5 = np.full(n, COLD_START_RATE)
-    rate20 = np.full(n, COLD_START_RATE)
-    rate_prior = np.full(n, COLD_START_RATE)
+    rate5 = np.full(n, np.nan)
+    rate20 = np.full(n, np.nan)
+    rate_prior = np.full(n, np.nan)
     streak_fails = np.zeros(n)
     builds_since_success = np.zeros(n)
     hours_since_last = np.zeros(n)
@@ -160,10 +167,15 @@ def add_rolling_history(
     then the global p95, rather than zero.  Using zero would make those builds
     appear to finish instantly, leaking their outcomes into concurrent builds.
 
+    Rate features are NaN for cold-start builds; ``engineer_features`` fills
+    them with a training-split prior (see ``training_failure_prior``).
+
     Must be called on the full chronologically-sorted dataset BEFORE any split.
     """
     out = df.copy()
-    for col in (*HISTORY_COLS, *STREAK_COLS):
+    for col in HISTORY_COLS:
+        out[col] = np.nan
+    for col in STREAK_COLS:
         out[col] = 0.0
 
     has_aux = (
@@ -181,17 +193,14 @@ def add_rolling_history(
         out["repo_fail_rate_last5"] = (
             out.groupby("gh_project_name")[_FAIL_TMP]
             .transform(lambda x: x.shift(1).rolling(5, min_periods=1).mean())
-            .fillna(COLD_START_RATE)
         )
         out["repo_fail_rate_last20"] = (
             out.groupby("gh_project_name")[_FAIL_TMP]
             .transform(lambda x: x.shift(1).rolling(20, min_periods=1).mean())
-            .fillna(COLD_START_RATE)
         )
         out["repo_prior_fail_rate"] = (
             out.groupby("gh_project_name")[_FAIL_TMP]
             .transform(lambda x: x.expanding().mean().shift(1))
-            .fillna(COLD_START_RATE)
         )
         # Streak / gap features default to 0 in the no-aux fallback path.
         out.drop(columns=[_FAIL_TMP], inplace=True)
@@ -241,9 +250,9 @@ def add_rolling_history(
 
     # Allocate result arrays indexed by build_id.
     idx = builds[build_id_col]
-    build_rate5 = pd.Series(COLD_START_RATE, index=idx)
-    build_rate20 = pd.Series(COLD_START_RATE, index=idx)
-    build_rate_prior = pd.Series(COLD_START_RATE, index=idx)
+    build_rate5 = pd.Series(np.nan, index=idx)
+    build_rate20 = pd.Series(np.nan, index=idx)
+    build_rate_prior = pd.Series(np.nan, index=idx)
     build_streak = pd.Series(0.0, index=idx)
     build_since_success = pd.Series(0.0, index=idx)
     build_hours_since = pd.Series(0.0, index=idx)
@@ -266,9 +275,9 @@ def add_rolling_history(
         build_hours_since.loc[sorted_b[build_id_col]] = hrs
 
     # Map build-level history back to job-level rows.
-    out["repo_fail_rate_last5"] = out[build_id_col].map(build_rate5).fillna(COLD_START_RATE)
-    out["repo_fail_rate_last20"] = out[build_id_col].map(build_rate20).fillna(COLD_START_RATE)
-    out["repo_prior_fail_rate"] = out[build_id_col].map(build_rate_prior).fillna(COLD_START_RATE)
+    out["repo_fail_rate_last5"] = out[build_id_col].map(build_rate5)
+    out["repo_fail_rate_last20"] = out[build_id_col].map(build_rate20)
+    out["repo_prior_fail_rate"] = out[build_id_col].map(build_rate_prior)
     out["repo_streak_fails"] = out[build_id_col].map(build_streak).fillna(0.0)
     out["repo_builds_since_success"] = out[build_id_col].map(build_since_success).fillna(0.0)
     out["repo_hours_since_last_build"] = out[build_id_col].map(build_hours_since).fillna(0.0)
@@ -287,8 +296,13 @@ def engineer_features(
     fit_encoders: bool = True,
     save_encoders: bool = True,
     encoder_path: Path = ENCODER_PATH,
+    cold_start_prior: float | None = None,
 ) -> tuple[pd.DataFrame, list[str]]:
     """Add pre-build features using either newly fitted or supplied encoders.
+
+    ``cold_start_prior`` (from ``training_failure_prior`` on the training split)
+    fills rate-history NaNs.  It is required whenever computed history has
+    cold-start rows; frames without any history columns get a constant 0.0.
 
     The function does not use ``tr_log_*`` data. Those fields are emitted after a
     build runs and would leak the label into a build-failure prediction model.
@@ -346,9 +360,17 @@ def engineer_features(
     for column in ("hour", "day_of_week", "month"):
         engineered[column] = _numeric_column(engineered, column).astype(int)
 
-    # Rolling history + streak features: pass through pre-computed values when
-    # present, or default to 0.0 (cold-start / live inference without history).
-    for column in (*HISTORY_COLS, *STREAK_COLS):
+    for column in HISTORY_COLS:
+        if column not in engineered.columns:
+            engineered[column] = 0.0
+            continue
+        values = pd.to_numeric(engineered[column], errors="coerce")
+        if values.isna().any():
+            if cold_start_prior is None:
+                raise ValueError(f"{column} has cold-start rows; pass cold_start_prior from training_failure_prior(train).")
+            values = values.fillna(cold_start_prior)
+        engineered[column] = values
+    for column in STREAK_COLS:
         engineered[column] = _numeric_column(engineered, column)
 
     if save_encoders:

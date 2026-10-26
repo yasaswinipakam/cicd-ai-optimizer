@@ -14,7 +14,7 @@ from src.models.clustering import RootCauseClusterer
 from src.models.suggestions import get_suggestion
 from src.inference.explainer import PredictionExplainer
 from src.inference.calibration import ProbabilityCalibrator
-from src.features.engineer import COLD_START_RATE, HISTORY_COLS, STREAK_COLS
+from src.features.engineer import HISTORY_COLS, STREAK_COLS
 from src.features.schema import DIRECT_PREBUILD_FEATURE_COLS
 
 
@@ -126,10 +126,10 @@ class CICDPredictor:
             "is_night": is_night,
         }
         # Rolling history features — caller supplies these from the build-history DB.
-        # Rate features default to COLD_START_RATE (global failure prior) when absent.
+        # Absent rates get the training split's failure prior saved with the model.
         # Streak/gap features default to 0.0 (no prior streak known).
         for col in HISTORY_COLS:
-            row[col] = self._number(raw.get(col), COLD_START_RATE)
+            row[col] = self._number(raw.get(col), self.preprocessing["cold_start_prior"])
         for col in STREAK_COLS:
             row[col] = self._number(raw.get(col), 0.0)
 

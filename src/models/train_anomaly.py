@@ -16,11 +16,10 @@ os.environ["XDG_CACHE_HOME"] = str(Path(tempfile.gettempdir()) / "cicd-ai-optimi
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
-from sklearn.model_selection import train_test_split
 
-from src.features.engineer import engineer_features
 from src.models.anomaly import AnomalyDetector
-from src.models.train import ARTIFACTS_DIR, DATA_PATH, MAX_TRAINING_ROWS, RANDOM_STATE
+from src.models.evaluate import _recreate_split
+from src.models.train import ARTIFACTS_DIR, DATA_PATH
 
 
 FIGURES_DIR = Path(__file__).resolve().parents[2] / "reports" / "figures"
@@ -62,18 +61,9 @@ def train_anomaly_detector(data_path: Path = DATA_PATH) -> AnomalyDetector:
 
     preprocessing = joblib.load(preprocessing_path)
     encoders = joblib.load(ARTIFACTS_DIR / "encoders.joblib")
-    feature_columns = preprocessing["feature_cols"]
-    df = pd.read_parquet(data_path, engine="pyarrow")
-    df, _ = engineer_features(df, encoders=encoders, fit_encoders=False, save_encoders=False)
-    if len(df) > MAX_TRAINING_ROWS:
-        df = df.sample(n=MAX_TRAINING_ROWS, random_state=RANDOM_STATE)
-    target = df["tr_status"].eq("failed").astype(int)
-    _x_train, x_test, _y_train, y_test = train_test_split(
-        df[feature_columns],
-        target,
-        test_size=0.2,
-        stratify=target,
-        random_state=RANDOM_STATE,
+    # Same history, cold-start prior and held-out split as model evaluation.
+    _x_train, x_test, _y_train, y_test = _recreate_split(
+        data_path, preprocessing["feature_cols"], encoders, preprocessing["cold_start_prior"]
     )
 
     x_test_imputed = preprocessing["imputer"].transform(x_test)

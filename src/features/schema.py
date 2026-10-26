@@ -24,7 +24,6 @@ DIRECT_PREBUILD_FEATURE_COLS = [
     "gh_diff_doc_files",
     "gh_diff_other_files",
     "gh_num_commits_on_files_touched",
-    "gh_num_commit_comments",
     "git_num_all_built_commits",
     "gh_sloc",
     "gh_test_lines_per_kloc",
@@ -34,11 +33,10 @@ DIRECT_PREBUILD_FEATURE_COLS = [
     "gh_repo_age",
     "gh_repo_num_commits",
     "tr_build_number",
-    # Previously unused pre-build columns — all available at trigger time.
-    "gh_num_commits_in_push",
-    "gh_num_pr_comments",
-    "gh_num_issue_comments",
 ]
+# Comment counts are undated snapshots that can postdate the build, and
+# gh_num_commits_in_push is entirely missing in this export; the availability
+# registry marks all four unavailable so they cannot be re-added silently.
 
 DERIVED_PREBUILD_FEATURE_COLS = [
     "prev_status_enc",
@@ -55,7 +53,7 @@ DERIVED_PREBUILD_FEATURE_COLS = [
     "is_weekend",
     "is_night",
     # Rolling per-repo failure history — finish-time-safe heap protocol.
-    # Cold-start default is COLD_START_RATE (empirical global failure prior).
+    # Cold-start rows get the training split's build-level failure rate.
     "repo_fail_rate_last5",
     "repo_fail_rate_last20",
     "repo_prior_fail_rate",
@@ -91,9 +89,4 @@ FEATURE_SOURCE_COLUMNS = [
     "month",
     "is_weekend",
     "is_night",
-    # Raw columns for the newly added direct pre-build features (deduped at load
-    # time via dict.fromkeys, so repeats from DIRECT_PREBUILD_FEATURE_COLS are fine).
-    "gh_num_commits_in_push",
-    "gh_num_pr_comments",
-    "gh_num_issue_comments",
 ]
