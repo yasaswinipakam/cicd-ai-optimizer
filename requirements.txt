@@ -3,6 +3,8 @@ pyarrow
 numpy
 scikit-learn
 xgboost
+lightgbm
+imbalanced-learn
 matplotlib
 seaborn
 joblib
