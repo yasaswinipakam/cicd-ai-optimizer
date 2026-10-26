@@ -57,7 +57,7 @@ Alert rate at this threshold: 42.5% of builds flagged; failure capture rate
 (recall) 81.4%.  The threshold was chosen to maximise recall subject to a ≤40%
 alert-rate ceiling and a precision floor equal to the base failure rate.
 
-### Phase-1 rigor study cross-check
+### Phase-1 rigor study results (authoritative)
 
 `src/models/phase1_rigor_evaluation.py` uses per-repository walk-forward folds
 with block bootstrap CIs — a stricter within-repo protocol at the correct
@@ -74,14 +74,64 @@ labelled "honest headlines":
 Cite the Phase-1 build-level result as the headline.  The job-level full-mode
 result is a development reference that shows directional improvement only.
 
-| Metric | Phase-1 Tier A (no history) | Phase-1 Tier C (+ history) | This codebase (full mode) |
-|---|---:|---:|---:|
-| Pooled / global AUC | ~0.72 | ~0.76 | **0.822** |
-| Macro within-repo AUC | ~0.64 | — | — |
-| F1 (chosen threshold) | ~0.43 | ~0.48 | **0.514** |
+#### Walk-forward (folds 6–10, 0h finish buffer, Tier C RF)
+
+| Fold | Repos | Macro within-repo AUC | Recall@15% |
+|---:|---:|---:|---:|
+| 6 | 525 | 0.643 | 0.329 |
+| 7 | 530 | 0.634 | 0.308 |
+| 8 (predeclared) | 544 | 0.646 | 0.308 |
+| 9 | 511 | 0.613 | 0.300 |
+| 10 | 511 | 0.621 | 0.279 |
+| **avg** | | **0.631** | **0.305** |
+
+History features (Tier C) add **+0.102 macro AUC** over no-history (Tier A),
+95% CI all-positive across all folds.
+
+#### Development test split (fixed 80/20, Tier C RF)
+
+| Finish buffer | Repos (both classes) | Macro within-repo AUC | Pooled AUC |
+|---:|---:|---:|---:|
+| 0h | 13 | 0.678 | **0.824** |
+| 1h | 13 | 0.612 | 0.796 |
+
+#### Finish-buffer sensitivity (walk-forward, Tier C)
+
+Adding a finish buffer guards against near-simultaneous builds leaking outcomes.
+Cost paid in AUC (averaged over folds 6–10):
+
+| Buffer | Mean ΔAUC vs 0h | 95% CI |
+|---:|---:|---:|
+| 1h | −0.030 | all negative |
+| 6h | −0.046 | all negative |
+
+At 1h buffer the headline AUC drops from ~0.631 to ~0.601; at 6h to ~0.585.
+Cite the 0h result as headline; sensitivity numbers quantify how much stricter
+assumptions cost.
+
+#### Negative result: Cplus (streak/gap features) hurts AUC
+
+Adding `HISTORY_PLUS` (hist_failure_streak, hist_hours_since_last_build,
+hist_hours_since_last_failure, hist_repo_fail_rate_10/20) to Tier C **reduces**
+macro within-repo AUC by −0.019 on average (4 of 5 folds have CI entirely below 0).
+
+| Fold | Tier C AUC | Tier Cplus AUC | Δ (Cplus − C) |
+|---:|---:|---:|---:|
+| 6 | 0.643 | 0.633 | −0.010 |
+| 7 | 0.634 | 0.612 | **−0.022** |
+| 8 | 0.646 | 0.633 | **−0.013** |
+| 9 | 0.613 | 0.595 | **−0.018** |
+| 10 | 0.621 | 0.590 | **−0.030** |
+
+Bold = CI entirely below 0 (statistically significant degradation).
+
+The streak/gap features added to `engineer.py` (application training) improve the
+app model's dev-split AUC but degrade the within-repo Phase-1 metric — likely
+because they introduce overfitting on short per-repo histories.  **The Phase-1
+headline remains Tier C (no streak features).**
 
 See `reports/phase1_v2_travis_per_project_online_summary.md` for per-project
-details (macro AUC 0.64, 95% CI [0.60, 0.69]).
+online validation: macro AUC 0.642, 95% CI [0.597, 0.687] across 15 projects.
 
 Run again with:
 
