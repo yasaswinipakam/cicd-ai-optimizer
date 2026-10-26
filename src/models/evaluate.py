@@ -38,7 +38,7 @@ from src.models.train import ARTIFACTS_DIR, DATA_PATH, MAX_TRAINING_ROWS, RANDOM
 
 
 FIGURES_DIR = Path(__file__).resolve().parents[2] / "reports" / "figures"
-MODEL_NAMES = ("random_forest", "decision_tree", "svm", "xgboost", "lightgbm")
+MODEL_NAMES = ("random_forest", "decision_tree", "svm", "xgboost", "lightgbm", "stacking")
 METRIC_COLUMNS = ("Accuracy", "Precision", "Recall", "F1", "AUC")
 # Keep CV process-safe on restricted hosts; individual estimators retain their configured parallelism.
 CV_N_JOBS = int(os.getenv("CV_N_JOBS", "1"))
@@ -190,9 +190,11 @@ def evaluate_models(data_path: Path = DATA_PATH) -> pd.DataFrame:
     FIGURES_DIR.mkdir(parents=True, exist_ok=True)
     results.to_csv(ARTIFACTS_DIR / "model_results.csv", index=False)
 
-    # SVM CV is intentionally omitted because RBF SVC is prohibitively slow at this scale.
+    # SVM and stacking CV are intentionally omitted: SVM is prohibitively slow at
+    # this scale; stacking would re-run inner CV on the base models (O(k*cv^2)).
+    _skip_cv = {"svm", "stacking"}
     cv_scores: dict[str, dict[str, float]] = {}
-    for name in ("random_forest", "decision_tree", "xgboost"):
+    for name in (n for n in MODEL_NAMES if n in models and n not in _skip_cv):
         cv_pipeline = Pipeline([("imputer", clone(imputer)), ("model", clone(models[name]))])
         cv_scores[name] = {
             "f1": cross_val_score(cv_pipeline, x_train, y_train, cv=5, scoring="f1", n_jobs=CV_N_JOBS).mean(),

@@ -14,8 +14,9 @@ from pathlib import Path
 
 import joblib
 import pandas as pd
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier, StackingClassifier
 from sklearn.impute import SimpleImputer
+from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, f1_score, precision_recall_fscore_support, roc_auc_score
 from sklearn.model_selection import RandomizedSearchCV, StratifiedKFold, train_test_split
 from sklearn.preprocessing import StandardScaler
@@ -151,10 +152,11 @@ def _persist_deployable(
     threshold: float,
     threshold_policy: dict,
     metadata: dict,
+    model_name: str = "random_forest",
 ) -> None:
     """Save the artifacts consumed by live inference with schema metadata."""
     ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
-    joblib.dump(model, ARTIFACTS_DIR / "random_forest.joblib")
+    joblib.dump(model, ARTIFACTS_DIR / f"{model_name}.joblib")
     joblib.dump(encoders, ARTIFACTS_DIR / "encoders.joblib")
     joblib.dump(
         {
@@ -168,7 +170,7 @@ def _persist_deployable(
         },
         ARTIFACTS_DIR / "preprocessing.joblib",
     )
-    (ARTIFACTS_DIR / "best_model.txt").write_text("random_forest\n", encoding="utf-8")
+    (ARTIFACTS_DIR / "best_model.txt").write_text(f"{model_name}\n", encoding="utf-8")
 
 
 def _fit_fast_models(data_path: Path) -> dict[str, object]:
@@ -439,21 +441,106 @@ def _tune_fast_models(data_path: Path) -> dict[str, object]:
     return models
 
 
+# Best hyperparameters from the last --mode tune run.
+# Update these after re-running --mode tune on new data.
+_STACK_RF_PARAMS: dict = {
+    "n_estimators": 200, "min_samples_split": 2, "min_samples_leaf": 2,
+    "max_features": "sqrt", "max_depth": None, "class_weight": "balanced",
+}
+_STACK_XGB_PARAMS: dict = {
+    "n_estimators": 400, "max_depth": 10, "learning_rate": 0.2,
+    "subsample": 0.9, "colsample_bytree": 0.8, "min_child_weight": 1,
+    "gamma": 0.1, "reg_alpha": 0, "reg_lambda": 2.0,
+}
+_STACK_LGBM_PARAMS: dict = {
+    "n_estimators": 300, "max_depth": 10, "learning_rate": 0.2,
+    "num_leaves": 255, "subsample": 0.9, "colsample_bytree": 0.9,
+    "min_child_samples": 20, "reg_alpha": 1.0, "reg_lambda": 1.0,
+}
+
+
+def _fit_stacking_models(data_path: Path) -> dict[str, object]:
+    """Stacked ensemble: RF + XGB + LGBM base learners → LR meta-learner (cv=5)."""
+    raw = _load_input(data_path)
+    raw = raw.sort_values(TIMESTAMP_COLUMN, kind="mergesort")
+    raw = add_rolling_history(raw, label_col=TARGET_COLUMN)
+    if len(raw) > MAX_TRAINING_ROWS:
+        raw = raw.sample(n=MAX_TRAINING_ROWS, random_state=RANDOM_STATE)
+
+    target = raw[TARGET_COLUMN].eq("failed").astype(int)
+    train_raw, test_raw = train_test_split(
+        raw, test_size=0.2, stratify=target, random_state=RANDOM_STATE
+    )
+    x_train, x_test, y_train, y_test, imputer, encoders = _engineer_split(train_raw, test_raw)
+
+    class_counts = y_train.value_counts()
+    scale_pos_weight = float(class_counts[0] / class_counts[1])
+
+    estimators = [
+        ("rf", RandomForestClassifier(
+            **_STACK_RF_PARAMS, random_state=RANDOM_STATE, n_jobs=-1,
+        )),
+        ("xgb", XGBClassifier(
+            **_STACK_XGB_PARAMS, scale_pos_weight=scale_pos_weight,
+            eval_metric="logloss", random_state=RANDOM_STATE, n_jobs=-1, tree_method="hist",
+        )),
+        ("lgbm", LGBMClassifier(
+            **_STACK_LGBM_PARAMS, scale_pos_weight=scale_pos_weight,
+            random_state=RANDOM_STATE, n_jobs=-1, verbose=-1,
+        )),
+    ]
+    stack = StackingClassifier(
+        estimators=estimators,
+        final_estimator=LogisticRegression(C=1.0, max_iter=1000, random_state=RANDOM_STATE),
+        cv=5,
+        stack_method="predict_proba",
+        passthrough=False,
+        n_jobs=-1,
+    )
+    started = time.perf_counter()
+    print("Fitting StackingClassifier (cv=5, 3 base models + LR meta) ...")
+    stack.fit(x_train, y_train)
+    elapsed = time.perf_counter() - started
+    print(f"  Stacking: trained in {elapsed:.1f}s")
+
+    proba = stack.predict_proba(x_test)[:, 1]
+    from sklearn.metrics import roc_auc_score, f1_score
+    test_auc = roc_auc_score(y_test, proba)
+    test_f1 = f1_score(y_test, (proba >= 0.5).astype(int))
+    print(f"  Stacking test F1={test_f1:.4f}, AUC={test_auc:.4f}")
+
+    scaler = StandardScaler().fit(x_train)
+    ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
+    joblib.dump(stack, ARTIFACTS_DIR / "stacking.joblib")
+    _persist_deployable(
+        stack, imputer, scaler, encoders,
+        mode="stack", threshold=0.5,
+        threshold_policy={"name": "default", "selection_rule": "stack mode uses 0.50"},
+        metadata={"sample_rows": len(raw), "split": "stratified_random",
+                  "test_f1": test_f1, "test_auc": test_auc},
+        model_name="stacking",
+    )
+    print("Stack mode complete: StackingClassifier persisted as live model.")
+    return {"stacking": stack}
+
+
 def train_models(data_path: Path = DATA_PATH, mode: str = "fast") -> dict[str, object]:
-    """Train models in explicit ``fast``, ``tune``, or deployable ``full`` mode."""
+    """Train models in explicit ``fast``, ``tune``, ``stack``, or deployable ``full`` mode."""
     assert_features_available_for_prediction(FEATURE_COLS)
     if mode == "fast":
         return _fit_fast_models(data_path)
     if mode == "tune":
         return _tune_fast_models(data_path)
+    if mode == "stack":
+        return _fit_stacking_models(data_path)
     if mode == "full":
         return _fit_full_temporal(data_path)
-    raise ValueError("mode must be 'fast', 'tune', or 'full'.")
+    raise ValueError("mode must be 'fast', 'tune', 'stack', or 'full'.")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Train CI/CD failure models.")
-    parser.add_argument("--mode", choices=("fast", "tune", "full"), default="fast")
+    parser.add_argument("--mode", choices=("fast", "tune", "stack", "full"), default="fast")
     args = parser.parse_args()
     train_models(mode=args.mode)
 

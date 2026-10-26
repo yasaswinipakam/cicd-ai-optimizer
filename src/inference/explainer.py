@@ -25,6 +25,20 @@ class PredictionExplainer:
         elif model.__class__.__name__ == "SVC":
             # KernelExplainer is too slow for synchronous live API predictions.
             logger.warning("SHAP explanations are unavailable for SVM models; returning an empty explanation.")
+        elif model.__class__.__name__ == "StackingClassifier":
+            # Extract the XGBoost base estimator for fast, exact SHAP values.
+            # StackingClassifier.estimators_ is the list of fitted base estimators
+            # in the same order as .estimators (the (name, est) pairs).
+            xgb_est = None
+            for (name, _), fitted in zip(model.estimators, model.estimators_):
+                if "xgb" in name or fitted.__class__.__name__ == "XGBClassifier":
+                    xgb_est = fitted
+                    break
+            if xgb_est is not None:
+                self.explainer = shap.TreeExplainer(xgb_est)
+                logger.info("SHAP using XGBoost base estimator from StackingClassifier.")
+            else:
+                logger.warning("No XGBClassifier found in StackingClassifier; SHAP unavailable.")
         else:
             self.explainer = shap.TreeExplainer(model)
 

@@ -14,7 +14,8 @@ from src.models.clustering import RootCauseClusterer
 from src.models.suggestions import get_suggestion
 from src.inference.explainer import PredictionExplainer
 from src.inference.calibration import ProbabilityCalibrator
-from src.features.schema import DIRECT_PREBUILD_FEATURE_COLS, HISTORY_FEATURE_COLS
+from src.features.engineer import COLD_START_RATE, HISTORY_COLS, STREAK_COLS
+from src.features.schema import DIRECT_PREBUILD_FEATURE_COLS
 
 
 class CICDPredictor:
@@ -125,8 +126,11 @@ class CICDPredictor:
             "is_night": is_night,
         }
         # Rolling history features — caller supplies these from the build-history DB.
-        # Default to 0.0 (cold-start) when the API payload omits them.
-        for col in HISTORY_FEATURE_COLS:
+        # Rate features default to COLD_START_RATE (global failure prior) when absent.
+        # Streak/gap features default to 0.0 (no prior streak known).
+        for col in HISTORY_COLS:
+            row[col] = self._number(raw.get(col), COLD_START_RATE)
+        for col in STREAK_COLS:
             row[col] = self._number(raw.get(col), 0.0)
 
         # Reindexing enforces the training schema and supplies defaults if it expands later.
