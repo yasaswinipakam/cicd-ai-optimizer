@@ -1,0 +1,150 @@
+{
+  "seed": 20261013,
+  "bootstrap_repetitions": 1000,
+  "rf": {
+    "n_estimators": 200,
+    "max_depth": 15,
+    "min_samples_split": 5,
+    "min_samples_leaf": 2,
+    "class_weight": "balanced",
+    "n_jobs": -1
+  },
+  "python": "3.13.9 | packaged by Anaconda, Inc. | (main, Oct 21 2025, 19:11:29) [Clang 20.1.8 ]",
+  "pandas": "2.3.3",
+  "numpy": "2.3.5",
+  "scikit_learn": "1.7.2",
+  "platform": "macOS-26.1-arm64-arm-64bit-Mach-O",
+  "git_commit": "5c3e70589fb1f7ba966dd849b6984da1b7a9d694",
+  "build_finish_time": "max over jobs of (gh_build_started_at + valid positive duration or repo p95/global p95 fallback + finish buffer)",
+  "finish_buffer_hours": {
+    "headline_tier_c": 0,
+    "sensitivity": [
+      1,
+      6
+    ],
+    "allowed": [
+      0,
+      1,
+      6
+    ]
+  },
+  "flagged_repo_identity_features_for_ablation": [
+    "gh_lang",
+    "gh_team_size",
+    "gh_sloc",
+    "gh_test_lines_per_kloc",
+    "gh_test_cases_per_kloc",
+    "gh_asserts_cases_per_kloc",
+    "gh_num_commits_on_files_touched",
+    "git_num_all_built_commits",
+    "gh_repo_age",
+    "gh_repo_num_commits",
+    "tr_build_number",
+    "hist_prev_failed",
+    "hist_repo_fail_rate_5",
+    "hist_repo_fail_rate_all"
+  ],
+  "history_rule": "only same-repository builds whose derived finish time is strictly earlier than current trigger/start time; ties among completed builds are ordered by finish time, trigger time, then build id",
+  "tier_cplus_history_features": [
+    "hist_repo_fail_rate_10",
+    "hist_repo_fail_rate_20",
+    "hist_failure_streak",
+    "hist_hours_since_last_build",
+    "hist_hours_since_last_failure"
+  ],
+  "tier_d_exploratory_challenge": {
+    "predeclared_variants": [
+      "Dcommit",
+      "Dcontext",
+      "DnormV2",
+      "DallV2",
+      "C_with_repository_balanced_rf"
+    ],
+    "evaluation": "same five expanding walk-forward folds; macro within-repository metrics primary; report every variant",
+    "same_commit_rule": "prior build of same trigger SHA must have derived finish strictly before current trigger",
+    "normalization_rule": "log1p feature z-score against same-repository builds that derived-finished strictly before current trigger",
+    "balanced_rf_rule": "inverse training-repository build count, normalized to mean weight one",
+    "availability_exclusions": [
+      "committer identity",
+      "file paths",
+      "gh_num_commits_in_push (all missing)",
+      "gh_pushed_at (all missing)"
+    ],
+    "normalization_correction": "Dnorm preliminary parts retained but superseded by DnormV2 because git_diff_test_churn is identically zero and its derived z-score is undefined"
+  },
+  "tier_e_protocol": {
+    "development_fold": 6,
+    "confirmation_folds": [
+      7,
+      8,
+      9,
+      10
+    ],
+    "frozen_before_confirmation": [
+      "STREAM/INFLIGHT/JOBS feature lists",
+      "LightGBM params",
+      "rank_xendcg objective with repo x calendar-month queries",
+      "equal z-blend of ranker and binary LightGBM using training-score moments",
+      "global Platt map fit on training scores"
+    ],
+    "stream_definition": "PR builds: (repo, gh_pull_req_num); push builds: (repo, git_branch)",
+    "outcome_rule": "stream and tr_prev_build outcomes used only if that build derived-finished strictly before current trigger",
+    "inflight_rule": "counts and flags use only the existence/start time of earlier-started builds, never their outcome",
+    "job_count_rule": "build-matrix size fixed at build creation; reported with and without (Enojobs) for provenance",
+    "verification": "_assert_stream_history brute-force recomputation on 40 sampled repositories every walk run",
+    "fold6_development_variants_tried": [
+      "RF/LGBM binary on C, C+S, C+S+I, C+S+I+J",
+      "repo-size weights",
+      "identity-feature removal",
+      "lambdarank vs rank_xendcg",
+      "week/month/quarter queries",
+      "4 LightGBM hyperparameter settings",
+      "5-seed bagging",
+      "ranker/binary blend weights 0.25 and 0.5",
+      "global label-shuffle null (3 seeds, 0.48-0.50)"
+    ]
+  },
+  "walk_tier_c_shuffle_control": {
+    "fold": 8,
+    "seeds": 10,
+    "label_permutation": "global training labels only",
+    "purpose": "additional null distribution; no model selection"
+  },
+  "random_score_sanity_control": {
+    "fold": 8,
+    "draws": 1000,
+    "scores": "independent uniform random scores over saved fixed test predictions",
+    "expected": "macro within-repository AUC centered near 0.5"
+  },
+  "per_project_online_protocol": {
+    "folds": 10,
+    "test_folds": [
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "training_folds_for_j": "1..j-1",
+    "model": "200-tree RF",
+    "resampling": "RandomOverSampler on transformed training fold only; no test resampling",
+    "skip_rule": "skip a repository-fold with no failed build in train or test"
+  },
+  "unavailable_requested_features": {
+    "committer_history": "clean.parquet contains no stable committer/account identifier",
+    "file_level_failure_history": "clean.parquet contains aggregate diff counts but no changed-file paths",
+    "change_type_indicators": "clean.parquet contains no file paths or file-type flags from which CI/config/dependency changes can be derived"
+  },
+  "duration_quality": {
+    "duration_missing": 331,
+    "duration_zero": 202,
+    "duration_negative": 0,
+    "duration_fallback": 533
+  },
+  "duration_fallback": {
+    "invalid_definition": "missing, zero, or negative tr_duration",
+    "repository_fallback": "positive-duration p95 within repository",
+    "global_fallback": "positive-duration p95 if repository p95 unavailable",
+    "global_p95_seconds": 19528.0
+  }
+}

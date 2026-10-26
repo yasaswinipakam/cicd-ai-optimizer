@@ -74,7 +74,59 @@ labelled "honest headlines":
 Cite the Phase-1 build-level result as the headline.  The job-level full-mode
 result is a development reference that shows directional improvement only.
 
-#### Walk-forward (folds 6–10, 0h finish buffer, Tier C RF)
+#### Headline: Tier E + LightGBM rank/binary blend (confirmation folds 7–10)
+
+Tier E adds finish-time-safe **stream** history (a stream is one PR, or one
+branch for push builds), **in-flight** context (is the previous build still
+running, queued builds, time since the stream last triggered) and build-matrix
+size to Tier C.  The model is an equal blend of a LightGBM `rank_xendcg` ranker
+(queries = repository × calendar month, so it optimises *within-repo* ordering)
+and a binary LightGBM, mapped to probabilities by one global Platt fit on
+training scores.
+
+**Protocol.** Every design choice was made on fold 6 only and frozen in code
+(`tier_e_protocol` in `phase1_v2_run_manifest.json`, which lists every variant
+tried).  Folds 7–10 were scored once, afterwards.  A brute-force recomputation
+(`_assert_stream_history`) re-checks the new history values on 40 repositories
+in every run; the smoke test confirms it catches a deliberately leaked feature.
+A global train-label shuffle drops the ranker to 0.48–0.50 within-repo AUC.
+
+| Finish buffer | Tier C RF | **Tier E blend** | Δ (paired, every fold's 95% CI > 0) |
+|---:|---:|---:|---:|
+| 0h | 0.628 | **0.698** | **+0.070** |
+| 1h | 0.600 | **0.681** | +0.081 |
+| 6h | 0.585 | **0.672** | +0.087 |
+
+Macro within-repo AUC, mean of folds 7–10.  Per-fold 0h: 0.702 / 0.713 / 0.683 / 0.694.
+Recall@15% within repo improves by +0.068 at 0h.  The gain *grows* under
+stricter buffers, because the in-flight features stay informative when
+outcomes are withheld longer.
+
+Attribution (folds 7–10, 0h, within-repo AUC):
+
+| Variant | Within-repo AUC | Pooled AUC |
+|---|---:|---:|
+| Tier C RF (previous headline) | 0.628 | 0.856 |
+| Tier C, binary LightGBM | 0.633 | — |
+| Tier C, LightGBM ranker | 0.664 | — |
+| Tier E, binary LightGBM | 0.652 | **0.881** |
+| Tier E, LightGBM ranker | 0.696 | — |
+| **Tier E, blend** | **0.698** | 0.828 |
+| Tier E blend without job-count features | 0.695 | 0.826 |
+
+- The **ranking objective** is the single largest lever (+0.031 on Tier C alone).
+- The **stream/in-flight features** add ~+0.03 on top of it.
+- Job-count features contribute only ~+0.003, so the result does not depend on them.
+- **Trade-off:** the blend gives up 0.028 pooled AUC versus Tier C RF (PR-AUC is
+  slightly higher, 0.667 vs 0.660).  If pooled ranking across repositories is the
+  operating goal, use **Tier E binary LightGBM**, which beats Tier C RF on both
+  metrics (within-repo +0.024, pooled +0.025).
+
+Sources: `reports/phase1_v2_walkforward_tier_e_vs_c.csv` (paired repository
+bootstrap), `reports/phase1_v2_walkforward_tier_e_summary.csv`,
+`scripts/compare_phase1_walkforward_tier_e.py`.
+
+#### Previous baseline: walk-forward (folds 6–10, 0h finish buffer, Tier C RF)
 
 | Fold | Repos | Macro within-repo AUC | Recall@15% |
 |---:|---:|---:|---:|
@@ -127,8 +179,9 @@ Bold = CI entirely below 0 (statistically significant degradation).
 
 The streak/gap features added to `engineer.py` (application training) improve the
 app model's dev-split AUC but degrade the within-repo Phase-1 metric — likely
-because they introduce overfitting on short per-repo histories.  **The Phase-1
-headline remains Tier C (no streak features).**
+because they introduce overfitting on short per-repo histories.  Repo-level
+streaks mix all branches and PRs together; Tier E's per-stream history is
+the version of this idea that does help.
 
 See `reports/phase1_v2_travis_per_project_online_summary.md` for per-project
 online validation: macro AUC 0.642, 95% CI [0.597, 0.687] across 15 projects.
