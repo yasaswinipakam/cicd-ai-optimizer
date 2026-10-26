@@ -211,7 +211,8 @@ def add_rolling_history(
     # global p95.  Using 0 would make those builds appear to finish instantly,
     # allowing their outcomes to leak into concurrent builds' history windows.
     start_ts = pd.to_datetime(out["gh_build_started_at"], utc=True, errors="coerce")
-    start_ns = start_ts.astype("int64")
+    # pandas 3 may store microseconds; durations below are added in nanoseconds.
+    start_ns = start_ts.dt.as_unit("ns").astype("int64")
     duration_raw = pd.to_numeric(out[duration_col], errors="coerce")
     pos_mask = duration_raw > 0
 
