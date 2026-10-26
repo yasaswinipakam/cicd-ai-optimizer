@@ -19,3 +19,13 @@ node_modules/
 
 # Generated local reports and temporary exports
 tmp/
+
+# Run logs and bulky intermediate outputs (regenerable)
+*.log
+runs/
+reports/phase1_v2_parts/
+data/raw/phase2_finance_v1/
+data/raw/phase2_finance_v1_commits/
+
+# OS clutter
+.DS_Store
