@@ -23,11 +23,18 @@ Best LGBM: `num_leaves=255, max_depth=10, lr=0.2, subsample=0.9, colsample_bytre
 
 | Model | Accuracy | Precision | Recall | F1 | AUC-ROC |
 |---|---:|---:|---:|---:|---:|
+| Stacking (RF+XGB+LGBM→LR) | 0.8981 | **0.8378** | 0.6394 | 0.7253 | **0.9121** |
 | XGBoost | 0.8883 | 0.7397 | 0.7238 | **0.7317** | 0.9027 |
-| Random Forest | 0.8938 | 0.8410 | 0.6112 | **0.7079** | 0.9077 |
+| Random Forest | 0.8938 | 0.8410 | 0.6112 | 0.6796 | 0.8940 |
 | LightGBM | 0.8635 | 0.6528 | 0.7510 | 0.6984 | 0.8913 |
 | Decision Tree | 0.7780 | 0.4822 | 0.7403 | 0.5840 | 0.8263 |
 | SVM | 0.7587 | 0.4484 | 0.6374 | 0.5265 | 0.7760 |
+
+Stacking ensemble (StackingClassifier, cv=5) has the highest AUC (0.9121) and
+precision (0.8378), meaning fewer false alarms.  XGBoost leads on F1 (0.7317)
+at the default 0.5 threshold; threshold tuning on the stacking model would likely
+close that gap.  Use `--mode stack` to train it; SHAP explanations on the stack
+use the XGB base estimator via TreeExplainer.
 
 No `tr_log_*` post-build field was used as a prediction feature.
 
