@@ -12,29 +12,37 @@ walk-forward (see below).
 Three rolling history features are included: `repo_fail_rate_last5`,
 `repo_fail_rate_last20`, and `repo_prior_fail_rate`. These are computed with the
 finish-time-safe heap protocol (only builds that finished strictly before the
-current build started), matching the Phase-1 rigor study.  Cold-start default
-is 0.0.
+current build started), matching the Phase-1 rigor study.  A repository's
+first builds have no completed history; their rates are filled with the
+**training split's build-level failure rate** (0.200 on the full-mode training
+window), saved with the model and reused at inference.  It replaced a
+hardcoded 0.35 global constant.
 
-43 features (37 original + 3 streak/gap + 3 previously unused pre-build columns).
-Hyperparameters tuned via `RandomizedSearchCV` (n_iter=25, 3-fold CV, F1 scoring) + LightGBM added.
+39 features (20 direct pre-build + 19 derived).  Four columns are excluded and
+blocked by the availability registry: `gh_num_pr_comments`,
+`gh_num_issue_comments` and `gh_num_commit_comments` are undated snapshots that
+can include comments written after the build, and `gh_num_commits_in_push` is
+entirely missing in this export.  Removing them cost nothing measurable
+(stacking AUC 0.912 → 0.911; deployed chronological AUC 0.8218 → 0.8213).
+
+Hyperparameters tuned via `RandomizedSearchCV` (n_iter=25, 3-fold CV, F1 scoring).
 Best RF: `max_depth=None, max_features=sqrt, class_weight=balanced, n_estimators=200`.
 Best XGB: `n_estimators=400, max_depth=10, lr=0.2, subsample=0.9, reg_lambda=2.0`.
 Best LGBM: `num_leaves=255, max_depth=10, lr=0.2, subsample=0.9, colsample_bytree=0.9`.
 
 | Model | Accuracy | Precision | Recall | F1 | AUC-ROC |
 |---|---:|---:|---:|---:|---:|
-| Stacking (RF+XGB+LGBM→LR) | 0.8981 | **0.8378** | 0.6394 | 0.7253 | **0.9121** |
-| XGBoost | 0.8883 | 0.7397 | 0.7238 | **0.7317** | 0.9027 |
-| Random Forest | 0.8938 | 0.8410 | 0.6112 | 0.6796 | 0.8940 |
-| LightGBM | 0.8635 | 0.6528 | 0.7510 | 0.6984 | 0.8913 |
-| Decision Tree | 0.7780 | 0.4822 | 0.7403 | 0.5840 | 0.8263 |
-| SVM | 0.7587 | 0.4484 | 0.6374 | 0.5265 | 0.7760 |
+| Stacking (RF+XGB+LGBM→LR) | 0.8972 | 0.8370 | 0.6353 | 0.7223 | **0.9108** |
+| Random Forest | 0.8942 | **0.8400** | 0.6143 | 0.7096 | 0.9069 |
+| XGBoost | 0.8920 | 0.7538 | 0.7229 | **0.7380** | 0.9013 |
+| LightGBM | 0.8769 | 0.6990 | 0.7291 | 0.7138 | 0.8976 |
+| Decision Tree | 0.7691 | 0.4693 | 0.7407 | 0.5746 | 0.8247 |
+| SVM | 0.7583 | 0.4468 | 0.6229 | 0.5204 | 0.7723 |
 
-Stacking ensemble (StackingClassifier, cv=5) has the highest AUC (0.9121) and
-precision (0.8378), meaning fewer false alarms.  XGBoost leads on F1 (0.7317)
-at the default 0.5 threshold; threshold tuning on the stacking model would likely
-close that gap.  Use `--mode stack` to train it; SHAP explanations on the stack
-use the XGB base estimator via TreeExplainer.
+Stacking ensemble (StackingClassifier, cv=5) has the highest AUC (0.9108).
+XGBoost leads on F1 (0.7380) at the default 0.5 threshold.  Use `--mode stack`
+to train the stack; SHAP explanations on it use the XGB base estimator via
+TreeExplainer.  Source: `artifacts/model_results.csv`.
 
 No `tr_log_*` post-build field was used as a prediction feature.
 
@@ -51,9 +59,9 @@ the Phase-1 protocol or cited as a valid headline AUC.
 
 | Train rows | Test rows | Threshold | Precision | Recall | F1 | AUC |
 |---:|---:|---:|---:|---:|---:|---:|
-| 2,849,851 | 712,463 | 0.30 | 0.3751 | 0.8142 | **0.5136** | **0.8218** |
+| 2,849,851 | 712,463 | 0.30 | 0.3767 | 0.8142 | **0.5151** | **0.8213** |
 
-Alert rate at this threshold: 42.5% of builds flagged; failure capture rate
+Alert rate at this threshold: 42.4% of builds flagged; failure capture rate
 (recall) 81.4%.  The threshold was chosen to maximise recall subject to a ≤40%
 alert-rate ceiling and a precision floor equal to the base failure rate.
 
