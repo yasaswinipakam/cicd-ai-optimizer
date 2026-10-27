@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import client from '../api/client'
 import StatusBadge from '../components/StatusBadge'
-import { PageHeader } from '../components/ui'
+import { PageHeader, ScrambleText } from '../components/ui'
 
 const initialForm = {
   pipeline: 'demo-repo',
@@ -64,7 +64,7 @@ export default function SubmitBuildPage() {
         </form>
         <div>
           {error && <p className="rounded-control border border-danger/30 bg-danger/10 p-4 text-danger" role="alert">{error}</p>}
-          {result && <section className="card tick animate-rise p-5 sm:p-6" aria-live="polite"><h2 className="text-xl text-ink">Prediction result</h2><div className="mt-4 grid grid-cols-2 gap-3"><div className="inset-panel p-4"><p className="label">Predicted</p><p className="mt-2"><StatusBadge status={result.predicted_status} /></p></div><div className="inset-panel p-4"><p className="label">Failure probability</p><p className="readout mt-1 text-2xl">{(result.failure_probability * 100).toFixed(1)}%</p></div></div><dl className="mt-4 space-y-3 text-sm"><div><dt className="label">Input-profile anomaly</dt><dd className="mt-1 text-ink">{result.is_anomaly ? 'Unusual pre-build profile (not a failure prediction)' : 'No unusual profile detected'}</dd></div><div><dt className="label">Root cause</dt><dd className="mt-1 text-ink">{result.root_cause_label || (result.predicted_status === 'failed' ? 'No failed-test log available for root-cause analysis.' : '—')}</dd></div></dl></section>}
+          {result && <section className="card tick animate-rise p-5 sm:p-6" aria-live="polite"><h2 className="text-xl text-ink"><ScrambleText text="Prediction result" /></h2><div className="mt-4 grid grid-cols-2 gap-3"><div className="inset-panel p-4"><p className="label">Predicted</p><p className="mt-2"><StatusBadge status={result.predicted_status} /></p></div><div className="inset-panel p-4"><p className="label">Failure probability</p><p className="readout mt-1 text-2xl">{(result.failure_probability * 100).toFixed(1)}%</p></div></div><dl className="mt-4 space-y-3 text-sm"><div><dt className="label">Input-profile anomaly</dt><dd className="mt-1 text-ink">{result.is_anomaly ? 'Unusual pre-build profile (not a failure prediction)' : 'No unusual profile detected'}</dd></div><div><dt className="label">Root cause</dt><dd className="mt-1 text-ink">{result.root_cause_label || (result.predicted_status === 'failed' ? 'No failed-test log available for root-cause analysis.' : '—')}</dd></div></dl></section>}
           {!result && !error && <div className="hidden rounded-card border border-dashed border-line-strong p-6 text-sm text-ink-muted lg:block">Run an analysis to see the predicted status and failure probability here.</div>}
         </div>
       </div>

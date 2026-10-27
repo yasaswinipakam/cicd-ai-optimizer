@@ -12,7 +12,7 @@ function ProtectedLayout() {
   const { token, user, logout } = useAuth()
   const location = useLocation()
   if (!token) return <Navigate to="/login" replace />
-  const linkClass = ({ isActive }) => `relative shrink-0 px-2 py-2 text-sm font-medium transition-colors sm:px-2.5 after:absolute after:inset-x-2 after:-bottom-3 after:h-0.5 after:rounded-full after:transition-colors ${isActive ? 'text-ink after:bg-accent' : 'text-ink-muted after:bg-transparent hover:text-ink'}`
+  const linkClass = ({ isActive }) => `relative shrink-0 px-2 py-2 text-sm font-medium transition-colors sm:px-2.5 after:absolute after:inset-x-2 after:-bottom-3 after:h-0.5 after:rounded-full after:bg-accent after:transition-transform after:duration-300 after:ease-(--ease-out-expo) ${isActive ? 'text-ink after:scale-x-100' : 'text-ink-muted after:scale-x-0 hover:text-ink hover:after:scale-x-40'}`
   return <div className="flex min-h-screen flex-col">
     <header className="sticky top-0 z-20 border-b border-line bg-canvas/80 backdrop-blur-md">
       <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-8 gap-y-2 px-4 py-3 sm:px-6">

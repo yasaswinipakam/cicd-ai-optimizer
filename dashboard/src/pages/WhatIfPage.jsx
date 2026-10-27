@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import client from '../api/client'
-import { PageHeader } from '../components/ui'
+import { LiveDot, PageHeader, ScrambleText } from '../components/ui'
 import { axisProps, chartColors, tooltipProps } from '../theme/chart'
 
 const initialControls = {
@@ -45,7 +45,7 @@ function RiskBadge({ probability }) {
   const [color, bar] = value < 30 ? ['text-success', 'bg-success'] : value < 60 ? ['text-warn', 'bg-warn'] : ['text-danger', 'bg-danger']
   return <div>
     <span className={`readout text-4xl ${color}`}>{value.toFixed(1)}%</span>
-    <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-raised"><div className={`h-full rounded-full ${bar} transition-all duration-500`} style={{ width: `${Math.min(value, 100)}%` }} /></div>
+    <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-raised"><div className={`sheen h-full rounded-full ${bar} transition-all duration-500`} style={{ width: `${Math.min(value, 100)}%` }} /></div>
   </div>
 }
 
@@ -83,7 +83,7 @@ function SimulationResult({ result }) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="eyebrow">Optimization simulation</p>
-          <h2 className="mt-1 text-xl text-ink">{impact}</h2>
+          <h2 className="mt-1 text-xl text-ink"><ScrambleText text={impact} /></h2>
         </div>
         <span className={`readout text-3xl ${impactColor}`}>{deltaPoints >= 0 ? '+' : ''}{deltaPoints.toFixed(1)} pp</span>
       </div>
@@ -185,9 +185,9 @@ export default function WhatIfPage() {
     <div className="mx-auto max-w-5xl">
       <PageHeader title="What-If Simulator">Explore a hypothetical build without saving anything to pipeline history.</PageHeader>
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_1.1fr]">
+      <div className="stagger grid gap-6 lg:grid-cols-[1fr_1.1fr]">
         <section className="card p-5 sm:p-6">
-          <h2 className="text-lg text-ink">Build inputs</h2>
+          <h2 className="text-lg text-ink"><ScrambleText text="Build inputs" /></h2>
           <div className="mt-5 space-y-5">
             <label className="label flex flex-wrap justify-between gap-x-2">
               Source churn <span className="stat text-sm">{controls.srcChurn}</span>
@@ -221,7 +221,7 @@ export default function WhatIfPage() {
         </section>
 
         <section className="card tick p-5 sm:p-6">
-          <p className="label flex items-center gap-2"><span className="size-1.5 animate-pulse rounded-full bg-success" />Live baseline failure probability</p>
+          <p className="label flex items-center gap-2"><LiveDot />Live baseline failure probability</p>
           <div className="mt-3"><RiskBadge probability={result?.failure_probability} /></div>
           {result?.is_anomaly && <span className="chip chip-accent-2 mt-4 whitespace-normal">Unusual pre-build input profile — not a failure prediction</span>}
           {error && <p className="mt-3 text-sm text-danger" role="alert">{error}</p>}
@@ -235,7 +235,7 @@ export default function WhatIfPage() {
       </div>
 
       <section className="card mt-6 p-5 sm:p-6">
-        <h2 className="text-lg text-ink">Try one intervention</h2>
+        <h2 className="text-lg text-ink"><ScrambleText text="Try one intervention" /></h2>
         <p className="mt-1 text-sm text-ink-muted">Change one actionable code-change value and compare the model's simulated risk with this baseline.</p>
         <div className="mt-5 grid gap-4 md:grid-cols-[1fr_1fr_auto] md:items-end">
           <label className="label">
