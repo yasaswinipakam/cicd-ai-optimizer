@@ -45,13 +45,13 @@ export default function SubmitBuildPage() {
 
   return (
     <>
-      <PageHeader eyebrow="predict" title="Submit build">Score a build's failure risk from its pre-build change profile.</PageHeader>
+      <PageHeader title="Submit build">Score a build's failure risk from its pre-build change profile.</PageHeader>
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,36rem)_minmax(0,1fr)]">
         <form onSubmit={submit} className="card grid gap-5 p-5 sm:p-6">
           <label className="label">Pipeline ID<input name="pipeline" value={form.pipeline} onChange={change} className="field" /></label>
           <label className="label">Source churn<input name="src" type="number" value={form.src} onChange={change} className="field" /></label>
           <fieldset className="grid grid-cols-3 gap-3">
-            <legend className="eyebrow col-span-3 mb-2">Changed files</legend>
+            <legend className="col-span-3 mb-1 text-sm font-medium text-ink">Changed files</legend>
             <label className="label">Added<input name="filesAdded" type="number" min="0" value={form.filesAdded} onChange={change} className="field" /></label>
             <label className="label">Deleted<input name="filesDeleted" type="number" min="0" value={form.filesDeleted} onChange={change} className="field" /></label>
             <label className="label">Modified<input name="filesModified" type="number" min="0" value={form.filesModified} onChange={change} className="field" /></label>
@@ -64,7 +64,7 @@ export default function SubmitBuildPage() {
         </form>
         <div>
           {error && <p className="rounded-control border border-danger/30 bg-danger/10 p-4 text-danger" role="alert">{error}</p>}
-          {result && <section className="card animate-rise p-5 sm:p-6" aria-live="polite"><p className="eyebrow">{'// result'}</p><h2 className="mt-2 text-xl text-ink">Prediction result</h2><div className="mt-4 grid grid-cols-2 gap-3"><div className="inset-panel p-4"><p className="label">Predicted</p><p className="mt-2"><StatusBadge status={result.predicted_status} /></p></div><div className="inset-panel p-4"><p className="label">Failure probability</p><p className="stat mt-1 text-2xl text-accent">{(result.failure_probability * 100).toFixed(1)}%</p></div></div><dl className="mt-4 space-y-3 text-sm"><div><dt className="label">Input-profile anomaly</dt><dd className="mt-1 text-ink">{result.is_anomaly ? 'Unusual pre-build profile (not a failure prediction)' : 'No unusual profile detected'}</dd></div><div><dt className="label">Root cause</dt><dd className="mt-1 text-ink">{result.root_cause_label || (result.predicted_status === 'failed' ? 'No failed-test log available for root-cause analysis.' : '—')}</dd></div></dl></section>}
+          {result && <section className="card tick animate-rise p-5 sm:p-6" aria-live="polite"><h2 className="text-xl text-ink">Prediction result</h2><div className="mt-4 grid grid-cols-2 gap-3"><div className="inset-panel p-4"><p className="label">Predicted</p><p className="mt-2"><StatusBadge status={result.predicted_status} /></p></div><div className="inset-panel p-4"><p className="label">Failure probability</p><p className="readout mt-1 text-2xl">{(result.failure_probability * 100).toFixed(1)}%</p></div></div><dl className="mt-4 space-y-3 text-sm"><div><dt className="label">Input-profile anomaly</dt><dd className="mt-1 text-ink">{result.is_anomaly ? 'Unusual pre-build profile (not a failure prediction)' : 'No unusual profile detected'}</dd></div><div><dt className="label">Root cause</dt><dd className="mt-1 text-ink">{result.root_cause_label || (result.predicted_status === 'failed' ? 'No failed-test log available for root-cause analysis.' : '—')}</dd></div></dl></section>}
           {!result && !error && <div className="hidden rounded-card border border-dashed border-line-strong p-6 text-sm text-ink-muted lg:block">Run an analysis to see the predicted status and failure probability here.</div>}
         </div>
       </div>

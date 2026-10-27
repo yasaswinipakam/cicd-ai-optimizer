@@ -44,7 +44,7 @@ function RiskBadge({ probability }) {
   const value = Number(probability || 0) * 100
   const [color, bar] = value < 30 ? ['text-success', 'bg-success'] : value < 60 ? ['text-warn', 'bg-warn'] : ['text-danger', 'bg-danger']
   return <div>
-    <span className={`stat text-5xl font-semibold ${color} drop-shadow-[0_0_18px_currentColor]`}>{value.toFixed(1)}%</span>
+    <span className={`readout text-4xl ${color}`}>{value.toFixed(1)}%</span>
     <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-raised"><div className={`h-full rounded-full ${bar} transition-all duration-500`} style={{ width: `${Math.min(value, 100)}%` }} /></div>
   </div>
 }
@@ -54,7 +54,7 @@ function ExplanationList({ explanation }) {
 
   return (
     <div className="mt-5 border-t border-line pt-4">
-      <h3 className="label">Why the baseline risk looks this way</h3>
+      <h3 className="label font-sans">Why the baseline risk looks this way</h3>
       <ul className="mt-3 space-y-2 text-sm">
         {explanation.slice(0, 5).map(item => (
           <li key={item.feature} className="flex justify-between gap-3">
@@ -79,23 +79,23 @@ function SimulationResult({ result }) {
   const intervention = interventionOptions[result.intervention?.field]
 
   return (
-    <section className="mt-6 animate-rise rounded-card border border-accent-2/30 bg-linear-to-br from-accent-2/10 via-surface-2 to-accent/5 p-5" aria-live="polite">
+    <section className="inset-panel mt-6 animate-rise p-5" aria-live="polite">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="eyebrow text-accent-2">Optimization simulation</p>
-          <h2 className="mt-2 text-xl text-ink">{impact}</h2>
+          <p className="eyebrow">Optimization simulation</p>
+          <h2 className="mt-1 text-xl text-ink">{impact}</h2>
         </div>
-        <span className={`stat text-3xl ${impactColor}`}>{deltaPoints >= 0 ? '+' : ''}{deltaPoints.toFixed(1)} pp</span>
+        <span className={`readout text-3xl ${impactColor}`}>{deltaPoints >= 0 ? '+' : ''}{deltaPoints.toFixed(1)} pp</span>
       </div>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         <div className="inset-panel p-4">
           <p className="label">Baseline failure risk</p>
-          <p className="stat mt-1 text-2xl">{percent(result.baseline?.failure_probability)}</p>
+          <p className="readout mt-1 text-2xl">{percent(result.baseline?.failure_probability)}</p>
         </div>
         <div className="inset-panel p-4">
           <p className="label">Simulated failure risk</p>
-          <p className="stat mt-1 text-2xl">{percent(result.simulated?.failure_probability)}</p>
+          <p className="readout mt-1 text-2xl">{percent(result.simulated?.failure_probability)}</p>
         </div>
       </div>
 
@@ -183,18 +183,18 @@ export default function WhatIfPage() {
 
   return (
     <div className="mx-auto max-w-5xl">
-      <PageHeader eyebrow="simulate" title="What-If Simulator">Explore a hypothetical build without saving anything to pipeline history.</PageHeader>
+      <PageHeader title="What-If Simulator">Explore a hypothetical build without saving anything to pipeline history.</PageHeader>
 
       <div className="grid gap-6 lg:grid-cols-[1fr_1.1fr]">
         <section className="card p-5 sm:p-6">
           <h2 className="text-lg text-ink">Build inputs</h2>
           <div className="mt-5 space-y-5">
             <label className="label flex flex-wrap justify-between gap-x-2">
-              Source churn <span className="stat text-sm text-accent">{controls.srcChurn}</span>
+              Source churn <span className="stat text-sm">{controls.srcChurn}</span>
               <input className="mt-2 w-full" type="range" min="0" max="2000" name="srcChurn" value={controls.srcChurn} onChange={update} />
             </label>
             <label className="label flex flex-wrap justify-between gap-x-2">
-              Test churn <span className="stat text-sm text-accent">{controls.testChurn}</span>
+              Test churn <span className="stat text-sm">{controls.testChurn}</span>
               <input className="mt-2 w-full" type="range" min="0" max="2000" name="testChurn" value={controls.testChurn} onChange={update} />
             </label>
             <div className="grid grid-cols-3 items-end gap-3">
@@ -220,9 +220,8 @@ export default function WhatIfPage() {
           </div>
         </section>
 
-        <section className="card relative overflow-hidden p-5 sm:p-6">
-          <div className="pointer-events-none absolute -top-16 -right-16 size-48 rounded-full bg-accent-2/15 blur-3xl" />
-          <p className="label flex items-center gap-2"><span className="size-2 animate-pulse rounded-full bg-accent" />Live baseline failure probability</p>
+        <section className="card tick p-5 sm:p-6">
+          <p className="label flex items-center gap-2"><span className="size-1.5 animate-pulse rounded-full bg-success" />Live baseline failure probability</p>
           <div className="mt-3"><RiskBadge probability={result?.failure_probability} /></div>
           {result?.is_anomaly && <span className="chip chip-accent-2 mt-4 whitespace-normal">Unusual pre-build input profile — not a failure prediction</span>}
           {error && <p className="mt-3 text-sm text-danger" role="alert">{error}</p>}

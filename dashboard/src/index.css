@@ -2,51 +2,47 @@
 
 /*
   Design tokens. Every color, font, radius and shadow the dashboard uses lives here,
-  so Tailwind utilities (bg-surface, text-ink-muted, font-display, rounded-card,
-  shadow-glow, ...) and the component classes below stay in sync.
+  so Tailwind utilities (bg-surface, text-ink-muted, font-display, rounded-card, ...)
+  and the component classes below stay in sync.
 
-  Type: Pixelify Sans (retro display: headings, nav, labels) · Geist (body copy) ·
-  Geist Mono (numbers, ids, code). Fonts are loaded in index.html.
+  Type: Doto (dot-matrix) for headings and the brand, Geist for UI and table numbers,
+  Geist Mono for KPI readouts and code. Fonts are loaded in index.html.
+
+  Color: warm graphite neutrals with one blue accent and a teal counterpoint.
 */
 @theme {
-  --font-display: "Pixelify Sans", ui-monospace, monospace;
+  --font-display: "Doto", ui-monospace, monospace;
   --font-sans: "Geist", ui-sans-serif, system-ui, -apple-system, sans-serif;
   --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  --color-canvas: #05070d;
-  --color-surface: #0a0e18;
-  --color-surface-2: #0f1522;
-  --color-raised: #151c2c;
-  --color-line: rgb(148 163 184 / 0.12);
-  --color-line-strong: rgb(148 163 184 / 0.24);
+  --color-canvas: #0d0d0c;
+  --color-surface: #141413;
+  --color-surface-2: #1a1a18;
+  --color-raised: #22221f;
+  --color-line: rgb(236 233 222 / 0.08);
+  --color-line-strong: rgb(236 233 222 / 0.15);
 
-  --color-ink: #e7edf6;
-  --color-ink-muted: #96a3b8;
-  --color-ink-faint: #5d697c;
+  --color-ink: #ecebe4;
+  --color-ink-muted: #a3a197;
+  --color-ink-faint: #6e6c64;
 
-  --color-accent: #3ee6f5;
-  --color-accent-strong: #0bc5d9;
-  --color-accent-2: #a68bff;
-  --color-success: #34d399;
-  --color-warn: #fbbf24;
-  --color-danger: #fb7185;
+  --color-accent: #3b82f6;
+  --color-accent-2: #4fd1c5;
+  --color-success: #8fd67f;
+  --color-warn: #f2c94c;
+  --color-danger: #f2545b;
   --color-info: #60a5fa;
 
-  --radius-card: 1rem;
-  --radius-control: 0.625rem;
+  --radius-card: 0.75rem;
+  --radius-control: 0.5rem;
 
-  --shadow-card: 0 1px 0 0 rgb(255 255 255 / 0.04) inset, 0 20px 40px -24px rgb(0 0 0 / 0.8);
-  --shadow-glow: 0 0 0 1px rgb(62 230 245 / 0.35), 0 0 24px -4px rgb(62 230 245 / 0.45);
+  --shadow-card: 0 1px 2px 0 rgb(0 0 0 / 0.45);
 
-  --animate-rise: rise 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
-  --animate-blink: blink 1.1s steps(1, end) infinite;
+  --animate-rise: rise 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
 
   @keyframes rise {
-    from { opacity: 0; transform: translateY(8px); }
+    from { opacity: 0; transform: translateY(4px); }
     to { opacity: 1; transform: none; }
-  }
-  @keyframes blink {
-    50% { opacity: 0; }
   }
 }
 
@@ -62,32 +58,28 @@
     margin: 0;
     min-width: 320px;
     font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.5;
     color: var(--color-ink);
     background-color: var(--color-canvas);
-    background-image:
-      radial-gradient(60rem 30rem at 10% -10%, rgb(62 230 245 / 0.10), transparent 60%),
-      radial-gradient(50rem 28rem at 95% -5%, rgb(166 139 255 / 0.12), transparent 60%);
-    background-attachment: fixed;
     -webkit-font-smoothing: antialiased;
   }
 
-  /* Faint blueprint grid behind everything, faded out towards the bottom. */
+  /* Faint dot-matrix field behind the page, fading out below the fold. */
   body::before {
     content: "";
     position: fixed;
     inset: 0;
     z-index: -1;
     pointer-events: none;
-    background-image:
-      linear-gradient(to right, rgb(148 163 184 / 0.05) 1px, transparent 1px),
-      linear-gradient(to bottom, rgb(148 163 184 / 0.05) 1px, transparent 1px);
-    background-size: 44px 44px;
-    mask-image: radial-gradient(ellipse at top, black 20%, transparent 75%);
+    background-image: radial-gradient(rgb(236 233 222 / 0.07) 1px, transparent 1px);
+    background-size: 22px 22px;
+    mask-image: linear-gradient(to bottom, black, transparent 70%);
   }
 
-  h1, h2, h3 { font-family: var(--font-display); font-weight: 600; letter-spacing: 0.01em; }
+  h1, h2, h3 { font-family: var(--font-display); font-weight: 900; letter-spacing: 0; }
 
-  ::selection { background: rgb(62 230 245 / 0.3); color: var(--color-ink); }
+  ::selection { background: rgb(59 130 246 / 0.35); color: var(--color-ink); }
 
   :focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 
@@ -98,77 +90,89 @@
 
 @layer components {
   .card {
-    @apply rounded-card border border-line bg-surface/80 shadow-card backdrop-blur-sm;
+    @apply rounded-card border border-line bg-surface shadow-card;
   }
   .card-hover {
-    @apply transition duration-300 hover:-translate-y-0.5 hover:border-accent/30;
+    @apply transition-colors duration-200 hover:border-line-strong;
   }
   .inset-panel {
-    @apply rounded-control border border-line bg-surface-2/80;
+    @apply rounded-control border border-line bg-surface-2;
+  }
+
+  /* Short accent tick on the top edge of a card, like an instrument-panel marker. */
+  .tick {
+    @apply relative;
+  }
+  .tick::before {
+    content: "";
+    @apply absolute -top-px left-5 h-0.5 w-6 rounded-full bg-accent;
   }
 
   .eyebrow {
-    @apply font-display text-[13px] font-medium tracking-[0.16em] text-accent uppercase;
+    @apply text-xs font-medium text-ink-muted;
   }
   .label {
-    @apply font-display text-[13px] tracking-[0.08em] text-ink-muted uppercase;
+    @apply text-[13px] font-medium text-ink-muted;
   }
   .stat {
-    @apply font-mono font-medium text-ink tabular-nums;
+    @apply font-semibold tracking-tight text-ink tabular-nums;
+  }
+  .readout {
+    @apply font-mono font-medium tracking-tight text-ink tabular-nums;
   }
 
   .field {
-    @apply mt-1.5 w-full rounded-control border border-line-strong bg-surface-2 px-3 py-2 font-mono text-sm tracking-normal text-ink normal-case transition outline-none placeholder:text-ink-faint hover:border-ink-faint focus:border-accent/70 focus:ring-2 focus:ring-accent/20;
+    @apply mt-1.5 h-9 w-full rounded-control border border-line-strong bg-canvas px-3 text-sm font-normal text-ink transition-colors outline-none placeholder:text-ink-faint hover:border-ink-faint focus:border-accent focus:ring-3 focus:ring-accent/20;
   }
 
   .btn {
-    @apply inline-flex cursor-pointer items-center justify-center gap-2 rounded-control px-4 py-2 font-display text-[15px] font-medium tracking-wide transition duration-200 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-control px-4 text-sm font-medium transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-50;
   }
   .btn-primary {
-    @apply bg-linear-to-r from-accent to-accent-2 text-canvas hover:shadow-glow hover:brightness-110 active:brightness-95;
+    @apply bg-accent text-white hover:bg-accent/90 active:bg-accent/80;
   }
   .btn-ghost {
-    @apply border border-line-strong bg-surface-2 text-ink hover:border-accent/50 hover:text-accent;
+    @apply border border-line-strong bg-surface text-ink hover:bg-raised;
   }
   .btn-sm {
-    @apply px-2.5 py-1 text-[13px];
+    @apply h-7 px-2.5 text-xs;
   }
 
   .chip {
-    @apply inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-mono text-xs font-medium whitespace-nowrap;
+    @apply inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium whitespace-nowrap;
   }
   .chip::before {
     content: "";
-    @apply size-1.5 rounded-full bg-current;
+    @apply size-1.5 rounded-[1px] bg-current;
   }
-  .chip-success { @apply border-success/30 bg-success/10 text-success; }
-  .chip-warn { @apply border-warn/30 bg-warn/10 text-warn; }
-  .chip-danger { @apply border-danger/30 bg-danger/10 text-danger; }
-  .chip-accent-2 { @apply border-accent-2/30 bg-accent-2/10 text-accent-2; }
+  .chip-success { @apply border-success/25 bg-success/10 text-success; }
+  .chip-warn { @apply border-warn/25 bg-warn/10 text-warn; }
+  .chip-danger { @apply border-danger/25 bg-danger/10 text-danger; }
+  .chip-accent-2 { @apply border-accent-2/25 bg-accent-2/10 text-accent-2; }
   .chip-neutral { @apply border-line-strong bg-raised text-ink-muted; }
 
   .data-table {
     @apply w-full text-left text-sm;
   }
   .data-table thead {
-    @apply border-b border-line bg-surface-2/70;
+    @apply border-b border-line bg-surface-2;
   }
   .data-table th {
-    @apply px-4 py-3 align-bottom font-display text-[13px] font-medium tracking-[0.08em] text-ink-muted uppercase;
+    @apply px-4 py-2.5 align-bottom text-xs font-medium text-ink-muted;
   }
   .data-table td {
     @apply px-4 py-3;
   }
   .data-table tbody tr {
-    @apply border-t border-line transition-colors first:border-t-0 hover:bg-raised/50;
+    @apply border-t border-line transition-colors first:border-t-0 hover:bg-surface-2;
+  }
+
+  .link {
+    @apply text-ink underline decoration-line-strong underline-offset-4 transition-colors hover:text-accent hover:decoration-accent;
   }
 
   .no-scrollbar {
     scrollbar-width: none;
     &::-webkit-scrollbar { display: none; }
-  }
-
-  .link {
-    @apply text-accent decoration-accent/40 underline-offset-4 transition hover:underline;
   }
 }

@@ -9,7 +9,7 @@ export const chartColors = {
 
 export const axisProps = {
   stroke: 'var(--color-line-strong)',
-  tick: { fill: 'var(--color-ink-muted)', fontSize: 11, fontFamily: 'var(--font-mono)' },
+  tick: { fill: 'var(--color-ink-muted)', fontSize: 11, fontFamily: 'var(--font-sans)' },
   tickLine: false,
 }
 
@@ -17,9 +17,9 @@ export const tooltipProps = {
   contentStyle: {
     background: 'var(--color-raised)',
     border: '1px solid var(--color-line-strong)',
-    borderRadius: 10,
+    borderRadius: 8,
     boxShadow: '0 12px 32px -12px rgb(0 0 0 / 0.8)',
-    fontFamily: 'var(--font-mono)',
+    fontFamily: 'var(--font-sans)',
     fontSize: 12,
   },
   labelStyle: { color: 'var(--color-ink-muted)', marginBottom: 4 },
