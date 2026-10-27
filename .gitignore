@@ -9,6 +9,7 @@ artifacts/*.joblib
 __pycache__/
 *.py[cod]
 .venv/
+.venv-broken/
 
 # JavaScript
 node_modules/
