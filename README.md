@@ -2,6 +2,34 @@
 
 This project analyzes CI/CD build data to predict build failures and support pipeline optimization. It combines a Python machine-learning workflow, a FastAPI service, and a React dashboard, with room for reproducible artifacts, reports, and containerized deployment.
 
+## Results at a glance
+
+The Phase-1 study's best recipe is **Tier E**. It adds the build's own
+*stream* history to the earlier Tier C model. A stream is the pull request, or
+the branch for push builds. Tier E also adds in-flight context and a ranking
+objective. It beat Tier C in every test:
+
+| Test | Data | Tier C | Tier E | Gain | Verdict |
+|---|---|---:|---:|---:|---|
+| Travis CI | 947 projects, 2011–16 | 0.628 | 0.695 | +0.067 | 4 of 4 folds |
+| GitHub Actions #1 | 30 repositories, 2025–26 | 0.715 | 0.770 | +0.055 | inconclusive, 3 of 5 |
+| **GitHub Actions #2** | **30 new repositories, Aug–Sep 2026** | **0.763** | **0.911** | **+0.149** | **confirms, 5 of 5** |
+
+- **The numbers** are within-repo AUC: how well the model ranks one
+  repository's risky builds above its safe ones.
+- **The GitHub Actions tests were pre-registered.** Each protocol was written
+  and hashed before the data was collected, and its decision rule was fixed in
+  advance.
+- **Catching failures:** on the confirmation test, a 15% review budget catches
+  43% of failures with Tier E, against 31% with Tier C.
+- **Where the gain comes from:**
+  - It is not just "it failed last time": that rule alone scores 0.72.
+  - The gain is smallest on the first failure after a pass: +0.041 on those
+    builds.
+
+Details: [`reports/final_results.md`](reports/final_results.md) and
+[`reports/phase1_v2_gha_confirmation_results.md`](reports/phase1_v2_gha_confirmation_results.md).
+
 ## Current validated model
 
 The deployed failure model is the **Tier E blend** from the Phase-1 study
