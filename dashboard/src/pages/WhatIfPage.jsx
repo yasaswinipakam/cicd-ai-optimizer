@@ -56,7 +56,7 @@ function RiskReadout({ probability, threshold }) {
   const flagged = threshold != null && Number(probability || 0) >= threshold
   return <div>
     <span className={`readout text-4xl ${flagged ? 'text-danger' : 'text-ink'}`}>{percent(probability)}</span>
-    <RiskBar probability={probability} threshold={threshold} />
+    <RiskBar probability={probability} threshold={threshold} label="a typical repository's alert threshold" />
   </div>
 }
 

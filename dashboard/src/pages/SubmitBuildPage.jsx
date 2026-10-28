@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import client from '../api/client'
 import StatusBadge from '../components/StatusBadge'
-import { useModelInfo } from '../api/model'
 import { RiskBar } from '../components/charts'
 import { PageHeader, ScrambleText } from '../components/ui'
 
@@ -48,7 +47,6 @@ export default function SubmitBuildPage() {
   const [form, setForm] = useState(initialForm)
   const [result, setResult] = useState(null)
   const [error, setError] = useState('')
-  const model = useModelInfo()
 
   const change = event => {
     const { name, type, checked, value } = event.target
@@ -109,7 +107,7 @@ export default function SubmitBuildPage() {
         </form>
         <div>
           {error && <p className="rounded-control border border-danger/30 bg-danger/10 p-4 text-danger" role="alert">{error}</p>}
-          {result && <section className="card tick animate-rise p-5 sm:p-6" aria-live="polite"><h2 className="text-xl text-ink"><ScrambleText text="Prediction result" /></h2><div className="mt-4 grid grid-cols-2 gap-3"><div className="inset-panel p-4"><p className="label">Predicted</p><p className="mt-2"><StatusBadge status={result.predicted_status} /></p></div><div className="inset-panel p-4"><p className="label">Failure probability</p><p className="readout mt-1 text-2xl">{(result.failure_probability * 100).toFixed(1)}%</p></div></div><RiskBar probability={result.failure_probability} threshold={model?.decision_threshold} /><HistoryContext context={result.stream_context} /></section>}
+          {result && <section className="card tick animate-rise p-5 sm:p-6" aria-live="polite"><h2 className="text-xl text-ink"><ScrambleText text="Prediction result" /></h2><div className="mt-4 grid grid-cols-2 gap-3"><div className="inset-panel p-4"><p className="label">Predicted</p><p className="mt-2"><StatusBadge status={result.predicted_status} /></p></div><div className="inset-panel p-4"><p className="label">Failure probability</p><p className="readout mt-1 text-2xl">{(result.failure_probability * 100).toFixed(1)}%</p></div></div><RiskBar probability={result.failure_probability} threshold={result.decision_threshold} label={result.alert_basis === 'repository_budget' ? "this repository's alert threshold, set by its riskiest 15% of recent runs" : "a typical repository's alert threshold, used until this one has 20 scored runs"} /><HistoryContext context={result.stream_context} /></section>}
           {!result && !error && <div className="hidden rounded-card border border-dashed border-line-strong p-6 text-sm text-ink-muted lg:block">Run an analysis to see the predicted status and failure probability here.</div>}
         </div>
       </div>

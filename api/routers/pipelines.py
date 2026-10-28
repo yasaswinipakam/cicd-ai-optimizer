@@ -17,6 +17,7 @@ from api.db.models import BuildLog, JobFailureAnalysis, JobRun, Pipeline, Predic
 from api.schemas import (
     BuildCreatedOut,
     BuildFeaturesIn,
+    AlertThresholdOut,
     BuildLogOut,
     DashboardSummaryOut,
     FailureTrendOut,
@@ -32,6 +33,7 @@ from api.schemas import (
     ShadowOutcomeIn,
 )
 from src.features.stream_context import PriorBuild, gha_stream_key, stream_context, stream_key
+from src.inference import alert_policy
 from src.inference.predictor import CICDPredictor
 from api.diagnostics_service import save_job_failure_analysis
 from src.models.suggestions import get_suggestion
@@ -159,6 +161,30 @@ def _seconds_since_previous_commit(builds: list[BuildLog], features: dict) -> fl
     return (committed - max(earlier)).total_seconds() if earlier else float("nan")
 
 
+def _alert_threshold(predictor: CICDPredictor, db: Session, pipeline: Pipeline) -> tuple[float, str, int]:
+    """This pipeline's alert threshold for its next build (see ``src.inference.alert_policy``).
+
+    Returns the threshold, its basis and how many earlier scores it used.
+    """
+    recent = (
+        db.query(Prediction.failure_probability)
+        .join(BuildLog, Prediction.build_log_id == BuildLog.id)
+        .filter(BuildLog.pipeline_id == pipeline.id)
+        .order_by(BuildLog.timestamp.desc(), BuildLog.id.desc())
+        .limit(alert_policy.WINDOW)
+        .all()
+    )
+    scores = [probability for (probability,) in reversed(recent)]
+    # The model's threshold is the typical-repository fallback; legacy stubs default to 0.5.
+    threshold, basis = alert_policy.repository_threshold(scores, getattr(predictor, "decision_threshold", 0.5))
+    return threshold, basis, len(scores)
+
+
+def _apply_alert_policy(prediction_data: dict, threshold: float) -> None:
+    """Replace the model's global-threshold verdict with the pipeline's review-budget one."""
+    prediction_data["predicted_status"] = "failed" if prediction_data["failure_probability"] >= threshold else "passed"
+
+
 def _prediction_out(prediction: Prediction) -> dict:
     return {
         "failure_probability": prediction.failure_probability,
@@ -183,12 +209,14 @@ def create_build(
     pipeline = _find_or_create_pipeline(pipeline_id, db)
     now = datetime.now(timezone.utc)
     features, context = _with_stream_context(predictor, db, pipeline, payload.build_features, now)
+    threshold, basis, _ = _alert_threshold(predictor, db, pipeline)
     analysis = (
         predictor.full_analysis(features, payload.failed_test_log, include_explanation=True)
         if explain
         else predictor.full_analysis(features, payload.failed_test_log)
     )
     prediction_data = analysis["prediction"]
+    _apply_alert_policy(prediction_data, threshold)
     anomaly_data = analysis["anomaly"]
     root_cause = analysis.get("root_cause") or {}
     # Without a reported status the outcome is unknown; never store the prediction as if observed.
@@ -224,7 +252,8 @@ def create_build(
     result = _prediction_out(prediction)
     result["explanation"] = analysis.get("explanation") if explain else None
     result.update({"build_log_id": build_log.id, "pipeline_id": pipeline.id, "pipeline_name": pipeline.name,
-                   "stream_context": context})
+                   "stream_context": context, "decision_threshold": threshold, "alert_basis": basis,
+                   "is_alert": prediction_data["failure_probability"] >= threshold})
     return result
 
 
@@ -245,10 +274,11 @@ def create_shadow_build(
     pipeline = _find_or_create_pipeline(pipeline_id, db)
     now = datetime.now(timezone.utc)
     features, context = _with_stream_context(predictor, db, pipeline, payload.build_features, now)
+    threshold, basis, _ = _alert_threshold(predictor, db, pipeline)
     analysis = predictor.full_analysis(features, include_explanation=explain)
     prediction_data = analysis["prediction"]
+    _apply_alert_policy(prediction_data, threshold)
     anomaly_data = analysis["anomaly"]
-    threshold = predictor.decision_threshold
     model_context = {
         "shadow_mode": True,
         "model_name": predictor.best_model_name,
@@ -258,6 +288,7 @@ def create_shadow_build(
         "training_mode": predictor.preprocessing.get("training_mode"),
         "feature_schema": predictor.feature_cols,
         "decision_threshold": threshold,
+        "alert_basis": basis,
         "prediction_created_at": now.isoformat(),
     }
     build_log = BuildLog(
@@ -295,6 +326,7 @@ def create_shadow_build(
             "pipeline_id": pipeline.id,
             "pipeline_name": pipeline.name,
             "decision_threshold": threshold,
+            "alert_basis": basis,
             "is_alert": prediction_data["failure_probability"] >= threshold,
             "model_version": predictor.model_artifact_sha256,
             "training_mode": predictor.preprocessing.get("training_mode"),
@@ -372,10 +404,25 @@ def model_info(predictor: CICDPredictor = Depends(get_predictor)) -> dict:
         "model_name": predictor.best_model_name,
         "training_mode": predictor.preprocessing.get("training_mode"),
         "decision_threshold": predictor.decision_threshold,
+        "alert_policy": {"type": "repository_budget", "review_budget": alert_policy.REVIEW_BUDGET,
+                         "window": alert_policy.WINDOW, "min_history": alert_policy.MIN_HISTORY},
         "input_schema": getattr(predictor, "input_schema", None),
         "holdout_metrics": metadata.get("holdout_metrics"),
         "new_repository_metrics": metadata.get("new_repository_holdout_metrics"),
     }
+
+
+@router.get("/pipelines/{pipeline_id:path}/alert-threshold", response_model=AlertThresholdOut)
+def pipeline_alert_threshold(
+    pipeline_id: str, db: Session = Depends(get_db), predictor: CICDPredictor = Depends(get_predictor)
+) -> dict:
+    """The alert threshold this pipeline's next build would get under its review budget."""
+    pipeline = db.query(Pipeline).filter(Pipeline.name == pipeline_id).first()
+    if pipeline is None:
+        raise HTTPException(status_code=404, detail="Pipeline not found")
+    threshold, basis, scored = _alert_threshold(predictor, db, pipeline)
+    return {"threshold": threshold, "basis": basis, "scored_builds": scored,
+            "review_budget": alert_policy.REVIEW_BUDGET, "min_history": alert_policy.MIN_HISTORY}
 
 
 @router.get("/pipelines", response_model=list[PipelineOut])
@@ -671,15 +718,21 @@ def dashboard_summary(
 def risk_distribution(
     threshold: float | None = Query(None, ge=0, le=1), db: Session = Depends(get_db)
 ) -> dict:
-    """Count predictions in ten equal failure-probability bins, and how many reach ``threshold``."""
+    """Count predictions in ten equal failure-probability bins, and how many were alerts.
+
+    Alerts are those raised when each build was scored, under its pipeline's
+    review budget; with ``threshold``, those at or above it instead.
+    """
     counts = [0] * 10
-    probabilities = [probability for (probability,) in db.query(Prediction.failure_probability).all()]
-    for probability in probabilities:
+    rows = db.query(Prediction.failure_probability, Prediction.predicted_status).all()
+    for probability, _ in rows:
         counts[min(int(probability * 10), 9)] += 1
+    flagged = (sum(status == "failed" for _, status in rows) if threshold is None
+               else sum(probability >= threshold for probability, _ in rows))
     return {
         "bins": [{"start": i / 10, "end": (i + 1) / 10, "count": count} for i, count in enumerate(counts)],
-        "total": len(probabilities),
-        "flagged": None if threshold is None else sum(probability >= threshold for probability in probabilities),
+        "total": len(rows),
+        "flagged": flagged,
     }
 
 

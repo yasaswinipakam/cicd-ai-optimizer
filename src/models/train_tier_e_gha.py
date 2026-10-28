@@ -11,8 +11,12 @@ runs.  As in ``train_tier_e`` (the Travis deployment):
 * its fold-10 predictions must reproduce the saved research predictions
   (``phase1_v2_gha_combined_parts/primary_0h_fold10_E_lgbmblend``), so the
   deployed code is the evaluated code;
-* the alert threshold is the 85th percentile of those fold-10 probabilities,
-  a 15% review budget chosen without labels.
+* alerts follow a per-repository review budget (``src.inference.alert_policy``):
+  a build is an alert when its risk reaches the 85th percentile of its
+  repository's recent scores.  ``decision_threshold`` is the fallback for
+  repositories with too few scores: the median over holdout repositories of
+  each one's 85th-percentile risk.  The pooled 85th percentile, a single
+  global threshold, is kept for reference only.  No threshold uses labels.
 
 The holdout also reports a *new-repository* score: fold 10 rescored with the
 workflow category removed.  Every workflow in a repository the model never saw
@@ -38,6 +42,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import evaluate_gha_tier_e as gha  # noqa: E402
 from compare_phase1_walkforward_tiers import per_repository_metrics  # noqa: E402
 from src.features.stream_context import CONTEXT_COLS  # noqa: E402
+from src.inference import alert_policy  # noqa: E402
 from src.models.tier_e import TierEBlend  # noqa: E402
 
 ARTIFACTS = ROOT / "artifacts"
@@ -45,13 +50,13 @@ RAW = [ROOT / "data" / "raw" / "final_research_dataset_MASTER.csv",
        ROOT / "data" / "raw" / "phase2_gha_confirm" / "gha_confirmation_dataset.csv"]
 SAVED = ROOT / "reports" / "phase1_v2_gha_combined_parts" / "primary_0h_fold10_E_lgbmblend.parquet"
 MODEL_NAME = "tier_e_gha_blend"
-ALERT_BUDGET = 0.15
 
 
-def _holdout_metrics(test: pd.DataFrame, p: np.ndarray, threshold: float) -> dict:
+def _holdout_metrics(test: pd.DataFrame, p: np.ndarray, alert: np.ndarray) -> dict:
     y = test.target_failed.to_numpy()
-    per = per_repository_metrics(pd.DataFrame({"repo": test.gh_project_name.to_numpy(), "label": y, "probability": p}))
-    alert = p >= threshold
+    frame = pd.DataFrame({"repo": test.gh_project_name.to_numpy(), "label": y, "probability": p, "alert": alert})
+    per = per_repository_metrics(frame)
+    by_repo = frame[frame.label.eq(1)].groupby("repo").alert.mean()
     return {
         "macro_within_repo_auc": float(per.within_repo_auc.mean()),
         "within_repo_auc_repositories": int(per.within_repo_auc.notna().sum()),
@@ -61,6 +66,9 @@ def _holdout_metrics(test: pd.DataFrame, p: np.ndarray, threshold: float) -> dic
         "alert_rate": float(alert.mean()),
         "precision_at_threshold": float(y[alert].mean()),
         "recall_at_threshold": float(y[alert].sum() / y.sum()),
+        "macro_repository_recall_at_threshold": float(by_repo.mean()),
+        "min_repository_alert_rate": float(frame.groupby("repo").alert.mean().min()),
+        "max_repository_alert_rate": float(frame.groupby("repo").alert.mean().max()),
     }
 
 
@@ -85,8 +93,11 @@ def main() -> None:
     if max_diff > 1e-6:
         raise AssertionError(f"deployed model does not reproduce research predictions (max diff {max_diff:.3g})")
 
-    threshold = float(np.quantile(p, 1 - ALERT_BUDGET))
+    pooled_threshold = float(np.quantile(p, 1 - alert_policy.REVIEW_BUDGET))
+    holdout = pd.DataFrame({"repo": test.gh_project_name.to_numpy(), "probability": p})
+    threshold = alert_policy.typical_repository_threshold(holdout)
     unseen = model.predict_proba(test.assign(**{c: None for c in categorical}))[:, 1]
+    unseen_holdout = holdout.assign(probability=unseen)
     model.metadata = {
         "model_name": MODEL_NAME,
         "variant": "E_lgbmblend",
@@ -100,9 +111,15 @@ def main() -> None:
         "holdout_window": [test.gh_build_started_at.min().isoformat(), test.gh_build_started_at.max().isoformat()],
         "reproduces_research_fold10_max_abs_diff": max_diff,
         "decision_threshold": threshold,
-        "threshold_policy": f"{ALERT_BUDGET:.0%} alert budget: {1 - ALERT_BUDGET:.0%} quantile of fold-10 probabilities (no labels used)",
-        "holdout_metrics": _holdout_metrics(test, p, threshold),
-        "new_repository_holdout_metrics": _holdout_metrics(test, unseen, threshold),
+        "alert_policy": {"type": "repository_budget", "review_budget": alert_policy.REVIEW_BUDGET,
+                         "window": alert_policy.WINDOW, "min_history": alert_policy.MIN_HISTORY,
+                         "fallback": "decision_threshold: median over holdout repositories of each one's "
+                                     f"{1 - alert_policy.REVIEW_BUDGET:.0%} risk quantile (no labels used)"},
+        "pooled_threshold": pooled_threshold,
+        "holdout_metrics": _holdout_metrics(test, p, alert_policy.simulate(holdout, threshold).to_numpy()),
+        "new_repository_holdout_metrics": _holdout_metrics(
+            test, unseen, alert_policy.simulate(unseen_holdout, threshold).to_numpy()),
+        "pooled_threshold_holdout_metrics": _holdout_metrics(test, p, p >= pooled_threshold),
         "finish_buffer_hours": 0,
         "stream_definition": "pull_request runs: (repository, actor:head_branch); push runs: (repository, branch)",
         "previous_build_definition": "previous run of the same workflow on the same stream",
@@ -111,9 +128,10 @@ def main() -> None:
     ARTIFACTS.mkdir(exist_ok=True)
     joblib.dump(model, ARTIFACTS / f"{MODEL_NAME}.joblib")
     (ARTIFACTS / "best_model.txt").write_text(f"{MODEL_NAME}\n", encoding="utf-8")
-    for key in ("holdout_metrics", "new_repository_holdout_metrics"):
+    for key in ("holdout_metrics", "new_repository_holdout_metrics", "pooled_threshold_holdout_metrics"):
         print(key, pd.Series(model.metadata[key]).round(4).to_dict())
-    print(f"threshold {threshold:.4f}; reproduces research fold 10 (max diff {max_diff:.2g})")
+    print(f"typical-repository threshold {threshold:.4f} (pooled {pooled_threshold:.4f}); "
+          f"reproduces research fold 10 (max diff {max_diff:.2g})")
 
 
 if __name__ == "__main__":

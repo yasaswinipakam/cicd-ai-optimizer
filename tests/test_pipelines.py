@@ -174,9 +174,11 @@ def test_chart_endpoints_report_model_distribution_and_recent_risk(client: TestC
     distribution = client.get("/dashboard/risk-distribution?threshold=0.75").json()
     assert len(distribution["bins"]) == 10 and distribution["bins"][7] == {"start": 0.7, "end": 0.8, "count": 3}
     assert distribution["total"] == 3 and distribution["flagged"] == 0
-    assert client.get("/dashboard/risk-distribution").json()["flagged"] is None
+    # Without a threshold: the alerts raised when each build was scored (0.73 >= the 0.4 fallback).
+    assert client.get("/dashboard/risk-distribution").json()["flagged"] == 3
     model = client.get("/model").json()
     assert model == {"model_name": "xgboost", "training_mode": "full", "decision_threshold": 0.4, "input_schema": None,
+                     "alert_policy": {"type": "repository_budget", "review_budget": 0.15, "window": 100, "min_history": 20},
                      "holdout_metrics": None, "new_repository_metrics": None}
 
 
@@ -187,3 +189,32 @@ def test_build_granularity_trend_gives_one_point_per_scored_build(client: TestCl
     points = client.get("/dashboard/failure-trends?granularity=build").json()
     assert [(p["total_builds"], p["failed_builds"], p["failure_rate"]) for p in points] == [(1, 1, 1.0), (1, 1, 1.0), (2, 1, 0.5)]
     assert all(p["average_predicted_risk"] == pytest.approx(0.73) for p in points)
+
+
+class VaryingPredictor(StubPredictor):
+    """Scores each build by its "risk" input, so alerts depend on the pipeline's own scores."""
+
+    def full_analysis(self, build_features: dict, failed_test_log: str | None = None,
+                      include_explanation: bool = False) -> dict:
+        p = float(build_features["risk"])
+        return {"prediction": {"failure_probability": p, "predicted_status": "failed" if p >= 0.4 else "passed",
+                               "confidence": max(p, 1 - p)},
+                "anomaly": {"is_anomaly": False, "anomaly_score": 0.0}, "root_cause": None, "explanation": []}
+
+
+def test_alerts_follow_each_pipelines_review_budget(client: TestClient) -> None:
+    app.dependency_overrides[get_predictor] = lambda: VaryingPredictor()
+    # Fewer than 20 scored builds: the model's typical-repository threshold (0.4) applies.
+    first = client.post("/pipelines/quiet-repo/shadow-builds", json={"risk": 0.3}).json()
+    assert (first["decision_threshold"], first["alert_basis"], first["is_alert"]) == (0.4, "typical_repository", False)
+    for i in range(1, 20):
+        client.post("/pipelines/quiet-repo/builds", json={"build_features": {"risk": i / 100}, "build_status": "passed"})
+    # Now its own scores set the bar: the 85th percentile of 0.01-0.19 and 0.3.
+    budget = client.get("/pipelines/quiet-repo/alert-threshold").json()
+    assert budget["basis"] == "repository_budget" and budget["scored_builds"] == 20
+    assert budget["threshold"] == pytest.approx(0.1715)
+    risky = client.post("/pipelines/quiet-repo/builds", json={"risk": 0.25}).json()
+    assert risky["is_alert"] is True and risky["predicted_status"] == "failed"
+    # Another pipeline's history does not move this one's bar.
+    assert client.post("/pipelines/other-repo/builds", json={"risk": 0.25}).json()["is_alert"] is False
+    assert client.get("/pipelines/missing/alert-threshold").status_code == 404

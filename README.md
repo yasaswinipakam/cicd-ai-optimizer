@@ -65,10 +65,29 @@ runs, 36% of which failed):
 | Within-repo recall at a 15% review budget | 43% |
 | Pooled AUC | 0.936 |
 
-The alert threshold flags 15% of holdout runs, a review budget chosen without
-labels. That puts it at 0.94, where precision is 0.97 and recall 0.40.
-Because the holdout fails so often, this threshold is strict for a typical
-repository.
+**Alerts: a per-repository review budget.** The model was evaluated by how many
+of a repository's failures fall in its riskiest 15% of builds. Alerts follow
+the same rule (`src/inference/alert_policy.py`):
+
+- **The rule.** A run is an alert when its risk reaches the 85th percentile of
+  its repository's last 100 scored runs.
+- **New repositories.** Until a repository has 20 scored runs, it gets a
+  typical repository's threshold: the median over holdout repositories of each
+  one's own 85th percentile, currently 0.89.
+- **Labels.** Neither threshold uses outcome labels.
+- **API.** `GET /pipelines/{id}/alert-threshold` shows a pipeline's current
+  threshold.
+
+Replayed in time order on the holdout, compared with one global threshold:
+
+| Alerts on the holdout | Per-repository budget | One global threshold (0.94) |
+|---|---:|---:|
+| Share of each repository's runs flagged | 11–22% | 3–51% |
+| Failures caught per repository (mean) | 41% | 34% |
+| Share of alerts that fail (pooled) | 80% | 97% |
+
+The global threshold's precision is higher only because it spends nearly all
+its alerts on the repositories that fail most.
 
 **The Travis model** (`src.models.train_tier_e`, within-repo AUC 0.690 on
 its holdout) stays reproducible. Rerunning that script points

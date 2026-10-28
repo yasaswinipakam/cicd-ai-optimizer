@@ -4,7 +4,6 @@ import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Too
 import client from '../api/client'
 import StatusBadge from '../components/StatusBadge'
 import { PageHeader, Panel, ScrambleText, TableShell } from '../components/ui'
-import { useModelInfo } from '../api/model'
 import { ChartInView, ContributionChart } from '../components/charts'
 import { axisProps, chartColors, tooltipProps } from '../theme/chart'
 
@@ -14,7 +13,8 @@ const OUTCOME_LABEL = { failed: 'Failed', passed: 'Passed' }
 const OutcomeDot = ({ cx, cy, payload }) => <circle cx={cx} cy={cy} r={5} fill={OUTCOME_COLOR[payload.outcome] ?? 'var(--color-ink-faint)'} stroke="var(--color-surface)" strokeWidth={2} />
 
 // Predicted risk for each build in time order, with the real outcome as the dot color.
-function RiskTimeline({ builds, threshold }) {
+function RiskTimeline({ builds, alert }) {
+  const threshold = alert?.threshold
   if (builds.length < 2) return null
   const data = [...builds].reverse().map((build, index) => ({
     build: index + 1,
@@ -22,7 +22,10 @@ function RiskTimeline({ builds, threshold }) {
     risk: +(build.failure_probability * 100).toFixed(1),
     outcome: build.build_status,
   }))
-  return <Panel className="mb-6" title="Risk over time" subtitle="Each dot is a build: its predicted risk, colored by what actually happened.">
+  const thresholdNote = !alert ? '' : alert.basis === 'repository_budget'
+    ? ' The dashed line flags this repository\'s riskiest 15% of recent builds.'
+    : ` The dashed line is a typical repository's threshold until this one has ${alert.min_history} scored builds.`
+  return <Panel className="mb-6" title="Risk over time" subtitle={`Each dot is a build: its predicted risk, colored by what actually happened.${thresholdNote}`}>
     <div className="mb-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-muted">
       {[['Failed', chartColors.danger], ['Passed', 'var(--color-success)'], ['Outcome not reported', 'var(--color-ink-faint)']].map(([label, color]) =>
         <span key={label} className="flex items-center gap-1.5"><span className="inline-block size-2.5 rounded-full" style={{ background: color }} />{label}</span>)}
@@ -75,12 +78,13 @@ export default function PipelineDetailPage() {
   const [builds, setBuilds] = useState([])
   const [jobs, setJobs] = useState([])
   const [analyses, setAnalyses] = useState({})
-  const model = useModelInfo()
+  const [alert, setAlert] = useState(null)
 
   useEffect(() => {
     const encoded = encodeURIComponent(pipelineId)
     client.get(`/pipelines/${encoded}/builds`).then(response => setBuilds(response.data)).catch(() => setBuilds([]))
     client.get(`/pipelines/${encoded}/telemetry/jobs`).then(response => setJobs(response.data)).catch(() => setJobs([]))
+    client.get(`/pipelines/${encoded}/alert-threshold`).then(response => setAlert(response.data)).catch(() => setAlert(null))
   }, [pipelineId])
 
   const showFailureAnalysis = async jobId => {
@@ -105,7 +109,7 @@ export default function PipelineDetailPage() {
 
   return <>
     <PageHeader title={pipelineId}>Pre-build failure predictions for this pipeline, newest first.</PageHeader>
-    <RiskTimeline builds={builds.filter(build => build.failure_probability != null)} threshold={model?.decision_threshold} />
+    <RiskTimeline builds={builds.filter(build => build.failure_probability != null)} alert={alert} />
     <TableShell><table className="data-table min-w-[820px]"><thead><tr><th>Timestamp</th><th>Status</th><th>Failure probability</th><th>Why</th><th>Report</th></tr></thead><tbody>
       {builds.map(build => <tr key={build.id} className="align-top">
         <td className="text-[13px] whitespace-nowrap text-ink-muted tabular-nums">{new Date(build.timestamp).toLocaleString()}</td>
