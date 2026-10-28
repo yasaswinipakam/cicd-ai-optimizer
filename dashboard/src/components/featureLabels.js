@@ -53,7 +53,8 @@ const LABELS = {
 
 const featureLabel = feature => LABELS[feature] ?? feature
 
-const YES_NO = /(^is_|_failed$|_pending$|^gh_is_pr$|^gh_by_core_team_member$)/
+// ctx_repo_pending is a count, so only the two single-build "pending" flags read as yes/no.
+const YES_NO = /(^is_|_failed$|^ctx_(prevbuild|stream)_pending$|^gh_is_pr$|^gh_by_core_team_member$)/
 const RATE = /(rate|ewma)/
 
 // "Label: value", with yes/no for flags and percentages for rates.

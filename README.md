@@ -228,8 +228,9 @@ the dashboard at `/` and the API under `/api`.
 - 450 real GitHub Actions runs from `twbs/bootstrap`,
   `freeCodeCamp/freeCodeCamp` and `yt-dlp/yt-dlp`, taken from the deployed
   model's holdout window, so the model never trained on them.
-- At build time they are replayed through the real webhook: each run is scored
-  when requested and gets its outcome when it completes.
+- At build time they are replayed through the real webhook, at their real
+  GitHub times: each run is scored when requested and gets its outcome when it
+  completes.
 - PR authors and feature-branch names are pseudonymised.
 
 **What visitors can do.** In read-only mode (`DEMO_READ_ONLY=1`):
@@ -275,6 +276,9 @@ What happens next:
 - **When a run is requested,** the API scores it and stores a shadow
   prediction. This covers first attempts of `push` and `pull_request` runs,
   the runs the model was trained on.
+- **Timing:** runs are timed by GitHub's own `created_at` and `updated_at`,
+  as in training, so a late webhook delivery doesn't change a run's history
+  or in-flight context.
 - **When the run completes,** the API attaches the real outcome to that
   prediction:
   - `success` counts as passed;

@@ -3,8 +3,9 @@
 Replays ``data/demo/seed_runs.json`` (built by ``scripts/build_demo_seed.py``)
 as signed GitHub ``workflow_run`` events, in time order, against the app
 in-process: each run is scored when requested and gets its outcome when it
-completes, exactly as a connected repository would.  Commit sizes come from
-the seed file instead of the GitHub API.
+completes, exactly as a connected repository would, timed by each run's real
+GitHub creation and completion times.  Commit sizes come from the seed file
+instead of the GitHub API.
 
     DATABASE_URL=sqlite:///./demo.db python scripts/seed_demo.py
 """
