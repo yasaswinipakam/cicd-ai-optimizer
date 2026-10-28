@@ -2,41 +2,97 @@
 
 This project analyzes CI/CD build data to predict build failures and support pipeline optimization. It combines a Python machine-learning workflow, a FastAPI service, and a React dashboard, with room for reproducible artifacts, reports, and containerized deployment.
 
+## Results at a glance
+
+The Phase-1 study's best recipe is **Tier E**. It adds the build's own
+*stream* history to the earlier Tier C model. A stream is the pull request, or
+the branch for push builds. Tier E also adds in-flight context and a ranking
+objective. It beat Tier C in every test:
+
+| Test | Data | Tier C | Tier E | Gain | Verdict |
+|---|---|---:|---:|---:|---|
+| Travis CI | 947 projects, 2011–16 | 0.628 | 0.695 | +0.067 | 4 of 4 folds |
+| GitHub Actions #1 | 30 repositories, 2025–26 | 0.715 | 0.770 | +0.055 | inconclusive, 3 of 5 |
+| **GitHub Actions #2** | **30 new repositories, Aug–Sep 2026** | **0.763** | **0.911** | **+0.149** | **confirms, 5 of 5** |
+
+- **The numbers** are within-repo AUC: how well the model ranks one
+  repository's risky builds above its safe ones.
+- **The GitHub Actions tests were pre-registered.** Each protocol was written
+  and hashed before the data was collected, and its decision rule was fixed in
+  advance.
+- **Catching failures:** on the confirmation test, a 15% review budget catches
+  43% of failures with Tier E, against 31% with Tier C.
+- **Where the gain comes from:**
+  - It is not just "it failed last time": that rule alone scores 0.72.
+  - The gain is smallest on the first failure after a pass: +0.041 on those
+    builds.
+
+Details: [`reports/final_results.md`](reports/final_results.md) and
+[`reports/phase1_v2_gha_confirmation_results.md`](reports/phase1_v2_gha_confirmation_results.md).
+
 ## Current validated model
 
-The deployed failure model is the **Tier E blend** from the Phase-1 study
-(`artifacts/tier_e_blend.joblib`, built by `src.models.train_tier_e`).
-It blends a binary LightGBM with a LightGBM ranker, standardizing each
-model's scores with training-score moments. A global Platt map turns the
-blended score into a probability.
+The deployed failure model is the **Tier E blend trained on GitHub Actions**
+(`artifacts/tier_e_gha_blend.joblib`, built by `src.models.train_tier_e_gha`).
+It was trained on 146,556 workflow runs from the 60 repositories of the two
+GitHub Actions tests above.
 
-**Inputs.** The model reads the build's change profile plus history for its
-*stream* (the pull request, or the branch for push builds) and its in-flight
-context. In-flight context means builds in the same pipeline that are still
-running. The API derives this history from the pipeline's stored builds.
-Clients send `git_branch`, `gh_is_pr` and `gh_pull_req_num`, and report each
-build's outcome. Only reported outcomes become history; builds awaiting an
-outcome count as running.
+**How it works.**
+- It blends a binary LightGBM with a LightGBM ranker, standardizing each
+  model's scores with training-score moments.
+- A global Platt map turns the blended score into a probability.
 
-**Holdout results.** The deployed model is exactly the walk-forward fold-10
-model: trained on chronological folds 1–9 and tested on fold 10, which it
-reproduces bit for bit. On that holdout:
+**Inputs.**
+- **The run:** its workflow, event (`push` or `pull_request`) and branch.
+- **The head commit's size:** lines added and deleted, files changed, message
+  length and merge status.
+- **History for its stream.** A stream is the pull request (author and head
+  branch), or the branch for push runs. The history covers the previous run of
+  the same workflow on that stream and the repository's runs still in progress.
+- **Where history comes from:** the API derives it from the repository's stored
+  runs. Only reported outcomes count; runs awaiting an outcome count as
+  in progress.
+
+**Holdout results.** The deployed model is exactly the combined analysis's
+walk-forward fold-10 model: trained on chronological folds 1–9 and tested on
+fold 10, which it reproduces bit for bit. On that holdout (the newest 10% of
+runs, 36% of which failed):
 
 | Measure | Value |
 |---|---:|
-| Within-repo AUC | 0.690 |
-| Pooled AUC | 0.844 |
-| Prevalence | 18.5% |
+| Within-repo AUC | 0.913 |
+| Within-repo AUC for a repository it has never seen | 0.893 |
+| Within-repo recall at a 15% review budget | 43% |
+| Pooled AUC | 0.936 |
 
-The alert threshold is set so that 15% of holdout builds are flagged, a
-review budget chosen without using labels. At that threshold, precision is
-0.71 and recall 0.57. The headline across folds 7–10 is 0.695 within-repo
-AUC, or about 0.62 on new breakages; see
-[`reports/final_results.md`](reports/final_results.md).
+**Alerts: a per-repository review budget.** The model was evaluated by how many
+of a repository's failures fall in its riskiest 15% of builds. Alerts follow
+the same rule (`src/inference/alert_policy.py`):
 
-**Cold start.** A pipeline with no recorded outcomes scores high. In
-training, a repository's first builds failed about half the time. Record a
-few outcomes before reading the scores.
+- **The rule.** A run is an alert when its risk reaches the 85th percentile of
+  its repository's last 100 scored runs.
+- **New repositories.** Until a repository has 20 scored runs, it gets a
+  typical repository's threshold: the median over holdout repositories of each
+  one's own 85th percentile, currently 0.89.
+- **Labels.** Neither threshold uses outcome labels.
+- **API.** `GET /pipelines/{id}/alert-threshold` shows a pipeline's current
+  threshold.
+
+Replayed in time order on the holdout, compared with one global threshold:
+
+| Alerts on the holdout | Per-repository budget | One global threshold (0.94) |
+|---|---:|---:|
+| Share of each repository's runs flagged | 11–22% | 3–51% |
+| Failures caught per repository (mean) | 41% | 34% |
+| Share of alerts that fail (pooled) | 80% | 97% |
+
+The global threshold's precision is higher only because it spends nearly all
+its alerts on the repositories that fail most.
+
+**The Travis model** (`src.models.train_tier_e`, within-repo AUC 0.690 on
+its holdout) stays reproducible. Rerunning that script points
+`best_model.txt` back at it, but the dashboard's forms send GitHub Actions
+inputs.
 
 **Random Forest.** The 39-feature Random Forest below still provides the
 anomaly-detection matrix and the what-if derived features. Rerunning
@@ -99,8 +155,12 @@ dataset in place, run the following from the project root:
 .venv/bin/python -m src.models.train_anomaly
 .venv/bin/python -m src.models.train_clustering
 
-# Deploy the Tier E blend (run last: it repoints best_model.txt). It checks that
-# it reproduces the saved research fold-10 predictions in reports/phase1_v2_parts/.
+# Deploy the GitHub Actions Tier E blend (run last: it repoints best_model.txt).
+# Needs both GitHub Actions CSVs; it checks that it reproduces the saved research
+# fold-10 predictions in reports/phase1_v2_gha_combined_parts/.
+.venv/bin/python -m src.models.train_tier_e_gha
+
+# Or the Travis Tier E blend, checked against reports/phase1_v2_parts/.
 .venv/bin/python -m src.models.train_tier_e
 ```
 
@@ -171,6 +231,31 @@ docker compose up --build
 Visit http://localhost:5173 to open the dashboard. The API is available at
 http://localhost:8000. Build model artifacts first using the preceding section;
 they are mounted into the API container. Stop the stack with `docker compose down`.
+
+## Scoring GitHub Actions runs
+
+Add a webhook on the GitHub repository:
+
+- **Settings -> Webhooks:** payload URL `https://<api>/webhooks/github-actions`,
+  content type `application/json`.
+- **Events:** subscribe to **Workflow runs** (and **Workflow jobs** for job
+  telemetry).
+
+What happens next:
+
+- **When a run is requested,** the API scores it and stores a shadow
+  prediction. This covers first attempts of `push` and `pull_request` runs,
+  the runs the model was trained on.
+- **When the run completes,** the API attaches the real outcome to that
+  prediction:
+  - `success` counts as passed;
+  - `failure` and `startup_failure` count as failed;
+  - other conclusions, such as cancelled, are stored but never become history.
+- **Nothing blocks or changes CI.**
+
+Set `GITHUB_TOKEN` to a token with read access to the repository's contents.
+The API uses it to fetch the head commit's size, which the webhook doesn't
+include. Without it, those inputs fall back to training medians.
 
 ## GitHub webhook security
 

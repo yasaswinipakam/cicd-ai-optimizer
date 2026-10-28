@@ -9,6 +9,7 @@ services:
       DATABASE_URL: sqlite:////app/data/cicd.db
       GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET}
       CI_DIAGNOSTICS_COLLECTOR_SECRET: ${CI_DIAGNOSTICS_COLLECTOR_SECRET}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-http://localhost:5173}
     volumes:
       - ./artifacts:/app/artifacts

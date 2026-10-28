@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Area, Bar, BarChart, CartesianGrid, ComposedChart, LabelList, Legend, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { Area, Bar, BarChart, CartesianGrid, ComposedChart, LabelList, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { useModelInfo } from '../api/model'
 import { ChartInView } from '../components/charts'
 import client from '../api/client'
@@ -144,16 +144,18 @@ function FinancePilotSection() {
 }
 
 // Within-repository AUC from the Phase-1 reports (0.5 = random ranking).
-// Travis: walk-forward folds 7-10; GitHub Actions: pre-registered external test, folds 6-10.
+// Travis: walk-forward folds 7-10; GitHub Actions: the two pre-registered tests, folds 6-10.
 const MODEL_RESULTS = [
   { set: 'All builds (Travis)', tierC: 0.628, tierE: 0.698 },
   { set: 'New breakages (Travis)', tierC: 0.556, tierE: 0.622 },
-  { set: 'GitHub Actions (external)', tierC: 0.715, tierE: 0.770 },
+  { set: 'GitHub Actions, test 1', tierC: 0.715, tierE: 0.770 },
+  { set: 'GitHub Actions, new repos', tierC: 0.763, tierE: 0.911 },
 ]
 
-function RiskDistribution({ distribution, threshold }) {
+function RiskDistribution({ distribution }) {
   const data = distribution.bins.map(bin => ({ mid: Math.round((bin.start + bin.end) * 50), range: `${Math.round(bin.start * 100)}–${Math.round(bin.end * 100)}%`, count: bin.count }))
-  const subtitle = distribution.flagged == null ? 'Failure probability of every scored build.' : `${distribution.flagged} of ${distribution.total} scored builds are at or above the current alert threshold.`
+  // Each repository flags its own riskiest 15% of recent builds, so there is no single threshold line.
+  const subtitle = `${distribution.flagged ?? 0} of ${distribution.total} scored builds were alerts. Each repository flags the riskiest 15% of its recent builds.`
   return <Panel title="Predicted risk distribution" subtitle={subtitle}>
     {distribution.total ? <ChartInView className="h-64"><ResponsiveContainer>
       <BarChart data={data} margin={{ top: 16, right: 8, left: -18, bottom: 0 }} barCategoryGap={2}>
@@ -161,7 +163,6 @@ function RiskDistribution({ distribution, threshold }) {
         <XAxis type="number" dataKey="mid" domain={[0, 100]} ticks={[0, 20, 40, 60, 80, 100]} unit="%" {...axisProps} />
         <YAxis allowDecimals={false} {...axisProps} axisLine={false} />
         <Tooltip {...tooltipProps} labelFormatter={(_mid, items) => `Risk ${items?.[0]?.payload.range ?? ''}`} formatter={value => [value, 'Builds']} />
-        {threshold != null && <ReferenceLine x={threshold * 100} stroke="var(--color-ink-muted)" strokeDasharray="4 4" label={{ value: 'alert threshold', position: 'top', fill: 'var(--color-ink-muted)', fontSize: 10 }} />}
         <Bar dataKey="count" fill={chartColors.accent} radius={[4, 4, 0, 0]} animationDuration={1100} />
       </BarChart>
     </ResponsiveContainer></ChartInView> : <p className="text-sm text-ink-muted">No scored builds yet.</p>}
@@ -170,11 +171,13 @@ function RiskDistribution({ distribution, threshold }) {
 
 function ModelPerformance({ model }) {
   const holdout = model?.holdout_metrics
+  const newRepository = model?.new_repository_metrics
+  const holdoutData = model?.input_schema === 'github_actions' ? 'GitHub Actions runs' : 'Travis builds'
   return <Panel title="How good is the model?" subtitle="Within-repository ranking quality (AUC); the axis starts at 0.5, which is random.">
     <ChartInView className="h-64"><ResponsiveContainer>
       <BarChart data={MODEL_RESULTS} layout="vertical" margin={{ top: 0, right: 36, left: 8, bottom: 0 }} barGap={2} barSize={12}>
         <CartesianGrid stroke={chartColors.grid} horizontal={false} />
-        <XAxis type="number" domain={[0.5, 0.8]} ticks={[0.5, 0.6, 0.7, 0.8]} {...axisProps} />
+        <XAxis type="number" domain={[0.5, 1]} ticks={[0.5, 0.6, 0.7, 0.8, 0.9, 1]} {...axisProps} />
         <YAxis type="category" dataKey="set" width={150} {...axisProps} axisLine={false} tick={{ ...axisProps.tick, fontSize: 11 }} />
         <Tooltip {...tooltipProps} formatter={value => value.toFixed(3)} />
         <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12 }} formatter={value => <span style={{ color: 'var(--color-ink-muted)' }}>{value}</span>} />
@@ -185,10 +188,13 @@ function ModelPerformance({ model }) {
       </BarChart>
     </ResponsiveContainer></ChartInView>
     {holdout && <dl className="mt-4 grid grid-cols-3 gap-3 border-t border-line pt-4 text-sm">
-      {[['Flags', holdout.alert_rate, 'of builds'], ['Precision', holdout.precision_at_threshold, 'of flags fail'], ['Recall', holdout.recall_at_threshold, 'of failures caught']].map(([label, value, note]) =>
+      {[['Flags', holdout.alert_rate, 'of builds'], ['Precision', holdout.precision_at_threshold, 'of flags fail'], ['Recall', holdout.macro_repository_recall_at_threshold ?? holdout.recall_at_threshold, 'of a repo\'s failures caught']].map(([label, value, note]) =>
         <div key={label}><dt className="label">{label}</dt><dd className="readout mt-1 text-lg">{Math.round(value * 100)}%</dd><dd className="text-xs text-ink-faint">{note}</dd></div>)}
     </dl>}
-    {holdout && <p className="mt-2 text-xs text-ink-faint">Deployed model at its alert threshold, on its held-out data (most recent 10% of Travis builds).</p>}
+    {holdout && <p className="mt-2 text-xs text-ink-faint">
+      Deployed model with each repository flagging its riskiest 15% of recent builds, on its held-out data (most recent 10% of {holdoutData}).
+      Within-repo AUC there: {holdout.macro_within_repo_auc.toFixed(2)}{newRepository && <>, or {newRepository.macro_within_repo_auc.toFixed(2)} for a repository it has never seen</>}.
+    </p>}
   </Panel>
 }
 
@@ -211,7 +217,7 @@ async function loadTrend() {
 }
 
 // Predicted risk (area) with the actual failure rate from reported outcomes (line).
-function FailureTrend({ threshold }) {
+function FailureTrend() {
   const [trend, setTrend] = useState(null)
   useEffect(() => { loadTrend().then(setTrend).catch(() => setTrend({ mode: 'day', points: [] })) }, [])
   if (!trend) return null
@@ -229,7 +235,6 @@ function FailureTrend({ threshold }) {
           ? <XAxis type="number" dataKey="x" domain={['dataMin', 'dataMax']} allowDecimals={false} tickFormatter={n => `#${n}`} {...axisProps} />
           : <XAxis type="number" scale="time" dataKey="x" domain={['dataMin', 'dataMax']} tickFormatter={formatDay} {...axisProps} minTickGap={32} />}
         <YAxis domain={[0, 100]} unit="%" {...axisProps} axisLine={false} />
-        {threshold != null && <ReferenceLine y={+(threshold * 100).toFixed(1)} stroke="var(--color-ink-muted)" strokeDasharray="4 4" label={{ value: 'alert threshold', position: 'insideTopRight', fill: 'var(--color-ink-muted)', fontSize: 10 }} />}
         <Tooltip {...tooltipProps} labelFormatter={(_x, items) => items?.[0]?.payload.when ?? ''} formatter={(value, name, item) => [value == null ? '—' : `${value}%`, name === 'risk' ? (byBuild ? names.risk : `${names.risk} (${item.payload.scored} builds)`) : `${names.rate} (${item.payload.reported} reported)`]} />
         <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12 }} formatter={name => <span style={{ color: 'var(--color-ink-muted)' }}>{names[name]}</span>} />
         <Area type="monotone" dataKey="risk" stroke={chartColors.accent} strokeWidth={2} fill="url(#trendFill)" connectNulls animationDuration={1800} animationEasing="ease-out" activeDot={{ r: 5, fill: chartColors.accent, stroke: 'var(--color-canvas)', strokeWidth: 2 }} dot={{ r: 3, fill: chartColors.accent, stroke: 'var(--color-canvas)', strokeWidth: 2 }} />
@@ -254,16 +259,15 @@ function RuntimeSection({ operational }) {
 export default function DashboardHome() {
   const [summary, setSummary] = useState(null); const [operational, setOperational] = useState(null); const [distribution, setDistribution] = useState(null); const [error, setError] = useState('')
   const model = useModelInfo()
-  // Count flags against the current model's threshold once it is known.
-  useEffect(() => { client.get('/dashboard/risk-distribution', { params: { threshold: model?.decision_threshold } }).then(r => setDistribution(r.data)).catch(() => setDistribution(null)) }, [model])
+  useEffect(() => { client.get('/dashboard/risk-distribution').then(r => setDistribution(r.data)).catch(() => setDistribution(null)) }, [])
   useEffect(() => { Promise.all([client.get('/dashboard/summary'), client.get('/dashboard/operational-summary')]).then(([s, o]) => { setSummary(s.data); setOperational(o.data) }).catch(() => setError('Unable to reach the API. Is it running?')) }, [])
   if (error) return <p className="rounded-control border border-danger/30 bg-danger/10 p-4 text-danger" role="alert">{error}</p>
   if (!summary) return <Loading>Loading dashboard…</Loading>
   return <>
     <PageHeader title="Dashboard">Build health and failure risk across monitored pipelines.</PageHeader>
     <section className="stagger grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3"><Card label="Builds analyzed" value={summary.total_builds_analyzed} /><Card label="Failure rate" value={summary.builds_with_outcome ? `${(summary.overall_failure_rate * 100).toFixed(1)}%` : '—'} note={`${summary.builds_with_outcome} builds with a reported outcome`} /><Card label="Pipelines monitored" value={summary.pipelines_monitored} /></section>
-    <FailureTrend threshold={model?.decision_threshold} />
-    <div className="stagger mt-6 grid gap-4 lg:grid-cols-2">{distribution && <RiskDistribution distribution={distribution} threshold={model?.decision_threshold} />}<ModelPerformance model={model} /></div>
+    <FailureTrend />
+    <div className="stagger mt-6 grid gap-4 lg:grid-cols-2">{distribution && <RiskDistribution distribution={distribution} />}<ModelPerformance model={model} /></div>
     {summary.top_root_causes.length > 0 && <Panel className="mt-6" title="Top root causes" subtitle="From failed-test logs attached to failed builds."><RankedList items={summary.top_root_causes} empty="" render={c => <li key={`${c.cluster_id}-${c.label}`} className="flex justify-between gap-3 py-3"><span>{c.label || `Cluster ${c.cluster_id}`}</span><span className="stat">{c.count}</span></li>} /></Panel>}
     {operational?.total_jobs_observed > 0 && <RuntimeSection operational={operational} />}
     <FinancePilotSection />

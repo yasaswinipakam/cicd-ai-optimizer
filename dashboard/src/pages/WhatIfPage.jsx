@@ -6,29 +6,25 @@ import { ContributionChart, RiskBar } from '../components/charts'
 import { LiveDot, PageHeader, ScrambleText } from '../components/ui'
 import { axisProps, chartColors, tooltipProps } from '../theme/chart'
 
-// The languages the deployed model was trained on; any other value would be scored as unknown.
-const LANGUAGES = ['go', 'java', 'python', 'ruby']
-
 const initialControls = {
-  srcChurn: 50,
-  filesAdded: 1,
-  filesDeleted: 1,
-  filesModified: 4,
-  language: 'ruby',
+  additions: 40,
+  deletions: 10,
+  filesModified: 3,
   isPr: true,
+  defaultBranch: false,
+  isMerge: false,
   previousFailed: false,
 }
 
 const interventionOptions = {
-  git_diff_src_churn: { label: 'Source-code churn', control: 'srcChurn', max: 2000 },
-  gh_diff_files_added: { label: 'Files added', control: 'filesAdded', max: 500 },
-  gh_diff_files_deleted: { label: 'Files deleted', control: 'filesDeleted', max: 500 },
-  gh_diff_files_modified: { label: 'Files modified', control: 'filesModified', max: 500 },
+  additions: { label: 'Lines added', control: 'additions', max: 5000 },
+  deletions: { label: 'Lines deleted', control: 'deletions', max: 5000 },
+  files_modified: { label: 'Files changed', control: 'filesModified', max: 500 },
 }
 
-// The what-if sandbox has no pipeline history, so it assumes an established
-// pipeline: ten finished builds on this branch at the training failure rate
-// (about 20%), nothing else running, with the toggle setting the last outcome.
+// The what-if sandbox has no repository history, so it assumes an established
+// one: ten finished runs on this branch at the training failure rate (about
+// 20%), nothing else running, with the toggle setting the last outcome.
 function typicalHistory(previousFailed) {
   const last = previousFailed ? 1 : 0
   return {
@@ -43,12 +39,12 @@ function typicalHistory(previousFailed) {
 function buildFeatures(controls) {
   return {
     ...typicalHistory(controls.previousFailed),
-    git_diff_src_churn: Number(controls.srcChurn),
-    gh_diff_files_added: Number(controls.filesAdded),
-    gh_diff_files_deleted: Number(controls.filesDeleted),
-    gh_diff_files_modified: Number(controls.filesModified),
-    gh_lang: controls.language,
-    gh_is_pr: controls.isPr,
+    event: controls.isPr ? 'pull_request' : 'push',
+    head_branch: controls.defaultBranch ? 'main' : 'feature',
+    additions: Number(controls.additions),
+    deletions: Number(controls.deletions),
+    files_modified: Number(controls.filesModified),
+    num_parents: controls.isMerge ? 2 : 1,
   }
 }
 
@@ -60,7 +56,7 @@ function RiskReadout({ probability, threshold }) {
   const flagged = threshold != null && Number(probability || 0) >= threshold
   return <div>
     <span className={`readout text-4xl ${flagged ? 'text-danger' : 'text-ink'}`}>{percent(probability)}</span>
-    <RiskBar probability={probability} threshold={threshold} />
+    <RiskBar probability={probability} threshold={threshold} label="a typical repository's alert threshold" />
   </div>
 }
 
@@ -110,7 +106,7 @@ function SimulationResult({ result }) {
         </div>
         <div className="inset-panel p-4">
           <p className="label">Simulated failure risk</p>
-          <p className="readout mt-1 text-2xl">{percent(result.simulated?.failure_probability)}</p>
+          <p className="readout mt-1 text-2xl">{percent(result.simulation?.failure_probability)}</p>
         </div>
       </div>
 
@@ -132,7 +128,7 @@ export default function WhatIfPage() {
   const [history, setHistory] = useState([])
   const model = useModelInfo()
   const [error, setError] = useState('')
-  const [interventionField, setInterventionField] = useState('gh_diff_files_modified')
+  const [interventionField, setInterventionField] = useState('files_modified')
   const [interventionValue, setInterventionValue] = useState(initialControls.filesModified)
   const [simulation, setSimulation] = useState(null)
   const [simulationError, setSimulationError] = useState('')
@@ -205,30 +201,25 @@ export default function WhatIfPage() {
           <h2 className="text-lg text-ink"><ScrambleText text="Build inputs" /></h2>
           <div className="mt-5 space-y-5">
             <label className="label flex flex-wrap justify-between gap-x-2">
-              Source churn <span className="stat text-sm">{controls.srcChurn}</span>
-              <input className="mt-2 w-full" type="range" min="0" max="2000" name="srcChurn" value={controls.srcChurn} onChange={update} />
+              Lines added <span className="stat text-sm">{controls.additions}</span>
+              <input className="mt-2 w-full" type="range" min="0" max="2000" name="additions" value={controls.additions} onChange={update} />
             </label>
-            <div className="grid grid-cols-3 items-end gap-3">
+            <div className="grid grid-cols-2 items-end gap-3">
               {[
-                ['filesAdded', 'Files added'],
-                ['filesDeleted', 'Files deleted'],
-                ['filesModified', 'Files modified'],
-              ].map(([name, label]) => (
+                ['deletions', 'Lines deleted', 5000],
+                ['filesModified', 'Files changed', 500],
+              ].map(([name, label, max]) => (
                 <label key={name} className="label">
                   {label}
-                  <input className="field" type="number" min="0" max="500" name={name} value={controls[name]} onChange={update} />
+                  <input className="field" type="number" min="0" max={max} name={name} value={controls[name]} onChange={update} />
                 </label>
               ))}
             </div>
-            <label className="label block">
-              Language
-              <select className="field" name="language" value={controls.language} onChange={update}>
-                {LANGUAGES.map(language => <option key={language}>{language}</option>)}
-              </select>
-            </label>
-            <label className="flex items-center gap-2.5 text-sm text-ink"><input type="checkbox" name="isPr" checked={controls.isPr} onChange={update} className="size-4" /> Pull request build</label>
-            <label className="flex items-center gap-2.5 text-sm text-ink"><input type="checkbox" name="previousFailed" checked={controls.previousFailed} onChange={update} className="size-4" /> Previous build on this branch failed</label>
-            <p className="-mt-2 text-xs text-ink-faint">Assumes an established pipeline: ten finished builds on this branch at a 20% failure rate, nothing else running.</p>
+            <label className="flex items-center gap-2.5 text-sm text-ink"><input type="checkbox" name="isPr" checked={controls.isPr} onChange={update} className="size-4" /> Pull request run</label>
+            <label className="flex items-center gap-2.5 text-sm text-ink"><input type="checkbox" name="defaultBranch" checked={controls.defaultBranch} onChange={update} className="size-4" /> On the default branch (main)</label>
+            <label className="flex items-center gap-2.5 text-sm text-ink"><input type="checkbox" name="isMerge" checked={controls.isMerge} onChange={update} className="size-4" /> Merge commit</label>
+            <label className="flex items-center gap-2.5 text-sm text-ink"><input type="checkbox" name="previousFailed" checked={controls.previousFailed} onChange={update} className="size-4" /> Previous run on this branch failed</label>
+            <p className="-mt-2 text-xs text-ink-faint">Assumes an established repository: ten finished runs on this branch at a 20% failure rate, nothing else running.</p>
           </div>
         </section>
 

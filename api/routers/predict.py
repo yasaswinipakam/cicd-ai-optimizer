@@ -23,13 +23,14 @@ OPTIMIZATION_DISCLAIMER = (
 def _scenario_output(predictor: CICDPredictor, build_features: dict, include_explanation: bool) -> dict:
     """Score one transient scenario through the existing frozen predictor path."""
     analysis = predictor.full_analysis(build_features, include_explanation=include_explanation)
-    prepared = predictor._prepared_features(build_features)
+    if getattr(predictor, "input_schema", "travis") == "github_actions":
+        derived = {"total_churn": float(predictor._tier_e_frame(build_features).loc[0, "total_churn"])}
+    else:
+        derived = {"total_files_changed": float(predictor._prepared_features(build_features).loc[0, "total_files_changed"])}
     return {
         "failure_probability": analysis["prediction"]["failure_probability"],
         "predicted_status": analysis["prediction"]["predicted_status"],
-        "derived_features": {
-            "total_files_changed": float(prepared.loc[0, "total_files_changed"]),
-        },
+        "derived_features": derived,
         "explanation": analysis.get("explanation") if include_explanation else None,
     }
 

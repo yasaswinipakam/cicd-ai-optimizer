@@ -36,6 +36,10 @@ ACTIONABLE_INTERVENTION_FIELDS = {
     "gh_diff_files_added": 500.0,
     "gh_diff_files_deleted": 500.0,
     "gh_diff_files_modified": 500.0,
+    # GitHub Actions model inputs (the head commit's size).
+    "additions": 5000.0,
+    "deletions": 5000.0,
+    "files_modified": 500.0,
 }
 
 
@@ -50,6 +54,9 @@ class OptimizationInterventionIn(BaseModel):
         "gh_diff_files_added",
         "gh_diff_files_deleted",
         "gh_diff_files_modified",
+        "additions",
+        "deletions",
+        "files_modified",
     ]
     value: float
     reason: str | None = None
@@ -118,6 +125,10 @@ class BuildCreatedOut(PredictionOut):
     # Tier E history/in-flight values the server derived for this build;
     # None when the deployed model does not use them. Missing history is null.
     stream_context: dict[str, float | None] | None = None
+    # This pipeline's review-budget threshold when the build was scored.
+    decision_threshold: float | None = None
+    alert_basis: str | None = None
+    is_alert: bool | None = None
 
 
 class ShadowBuildCreatedOut(PredictionOut):
@@ -128,6 +139,7 @@ class ShadowBuildCreatedOut(PredictionOut):
     pipeline_name: str
     stream_context: dict[str, float | None] | None = None
     decision_threshold: float
+    alert_basis: str | None = None
     is_alert: bool
     model_version: str
     training_mode: str | None = None
@@ -220,8 +232,19 @@ class PipelineOut(BaseModel):
 class ModelInfoOut(BaseModel):
     model_name: str
     training_mode: str | None = None
-    decision_threshold: float
+    decision_threshold: float  # alert threshold for pipelines with too few scored builds
+    alert_policy: dict[str, Any] | None = None
+    input_schema: str | None = None  # "github_actions" or "travis": which inputs the model reads
     holdout_metrics: dict[str, float] | None = None
+    new_repository_metrics: dict[str, float] | None = None
+
+
+class AlertThresholdOut(BaseModel):
+    threshold: float
+    basis: str  # "repository_budget" or "typical_repository"
+    scored_builds: int
+    review_budget: float
+    min_history: int
 
 
 class RiskBinOut(BaseModel):

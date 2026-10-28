@@ -7,7 +7,7 @@ import { axisProps, chartColors, tooltipProps } from '../theme/chart'
 const pct = value => `${(Number(value || 0) * 100).toFixed(1)}%`
 
 // Horizontal risk meter with the alert threshold marked; the fill animates to the new value.
-export function RiskBar({ probability, threshold }) {
+export function RiskBar({ probability, threshold, label = 'the alert threshold' }) {
   const value = Math.min(Math.max(Number(probability || 0), 0), 1)
   const flagged = threshold != null && value >= threshold
   return <div>
@@ -16,7 +16,7 @@ export function RiskBar({ probability, threshold }) {
       {threshold != null && <div className="absolute -top-1.5 h-5 w-0.5 rounded-full bg-ink" style={{ left: `${threshold * 100}%` }} aria-hidden="true" />}
     </div>
     {threshold != null && <p className="mt-2 text-xs text-ink-muted">
-      {flagged ? 'Above' : 'Below'} the alert threshold ({pct(threshold)}, the white tick).
+      {flagged ? 'Above' : 'Below'} {label} ({pct(threshold)}, the white tick).
     </p>}
   </div>
 }

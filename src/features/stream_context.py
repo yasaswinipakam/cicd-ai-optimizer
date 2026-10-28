@@ -54,6 +54,18 @@ def stream_key(is_pr, pr_number, branch) -> str:
     return f"br{'' if branch is None or pd.isna(branch) else branch}"
 
 
+def gha_stream_key(event, actor, branch) -> str:
+    """GitHub Actions stream key, as in ``scripts/evaluate_gha_tier_e.py``.
+
+    Runs carry no PR number, so a pull request is identified by its author and
+    head branch; a push run's stream is its branch.
+    """
+    branch = "" if branch is None or pd.isna(branch) else str(branch)
+    if str(event) == "pull_request":
+        return f"pr{'' if actor is None or pd.isna(actor) else actor}:{branch}"
+    return f"br{branch}"
+
+
 def _ns(value) -> int:
     return pd.Timestamp(value).tz_localize("UTC").value if pd.Timestamp(value).tzinfo is None else pd.Timestamp(value).value
 

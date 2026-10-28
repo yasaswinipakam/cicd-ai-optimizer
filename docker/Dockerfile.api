@@ -8,6 +8,8 @@ COPY src ./src
 COPY api ./api
 COPY artifacts ./artifacts
 COPY data ./data
+# The predictor refuses to start without the feature-availability registry.
+COPY reports/feature_availability_registry.json ./reports/
 
 EXPOSE 8000
 CMD ["sh", "-c", "python -m api.db.init_db && uvicorn api.main:app --host 0.0.0.0 --port 8000"]

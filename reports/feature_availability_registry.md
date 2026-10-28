@@ -2,7 +2,8 @@
 
 This registry inventories all 66 columns in the raw TravisTorrent export and the
 19 derived columns plus 20 direct pre-build columns that may enter the prediction matrix, and the
-15 Tier E history and in-flight columns used by the deployed `tier_e_blend` model. The derived records are
+15 Tier E history and in-flight columns used by the `tier_e_blend` (Travis) and `tier_e_gha_blend`
+(GitHub Actions) models, plus the 10 GitHub Actions change inputs of `tier_e_gha_blend`. The derived records are
 included so runtime enforcement can validate `FEATURE_COLS` and the Tier E schema directly. "Used by
 model" includes raw inputs that feed a derived production feature.
 
@@ -108,3 +109,13 @@ model" includes raw inputs that feed a derived production feature.
 | `ctx_repo_pending` | PRE_BUILD | Yes | Yes | LOW | Tier E in-flight: number of earlier builds in this repository still running. Uses only the existence of earlier build starts, never their outcomes. |
 | `ctx_repo_started_1h` | PRE_BUILD | Yes | Yes | LOW | Tier E in-flight: number of builds started in this repository in the previous hour. Uses only the existence of earlier build starts, never their outcomes. |
 | `ctx_hours_since_stream_start` | PRE_BUILD | Yes | Yes | LOW | Tier E in-flight: hours since the latest earlier build on this stream started. Stream = this pull request, or the branch for push builds. Uses only the existence of earlier build starts, never their outcomes. |
+| `additions` | PRE_BUILD | Yes | Yes | LOW | Tier E (GitHub Actions): Lines added by the run's head commit (commits API). The commit exists before the workflow run is requested. |
+| `deletions` | PRE_BUILD | Yes | Yes | LOW | Tier E (GitHub Actions): Lines deleted by the run's head commit (commits API). The commit exists before the workflow run is requested. |
+| `total_churn` | PRE_BUILD | Yes | Yes | LOW | Tier E (GitHub Actions): additions + deletions of the run's head commit. |
+| `files_modified` | PRE_BUILD | Yes | Yes | LOW | Tier E (GitHub Actions): Number of files changed by the run's head commit (commits API). |
+| `msg_len` | PRE_BUILD | Yes | Yes | LOW | Tier E (GitHub Actions): Length of the head commit's full message, known when the commit is pushed. |
+| `is_merge` | PRE_BUILD | Yes | Yes | LOW | Tier E (GitHub Actions): Whether the head commit has more than one parent. |
+| `num_parents` | PRE_BUILD | Yes | Yes | LOW | Tier E (GitHub Actions): Parent count of the head commit. |
+| `time_since_last_commit` | PRE_BUILD | Yes | Yes | LOW | Tier E (GitHub Actions): Seconds since the repository's previous run-triggering commit, by commit date. Uses only commits of earlier runs. |
+| `is_default_branch` | PRE_BUILD | Yes | Yes | LOW | Tier E (GitHub Actions): Whether the run's head branch is main or master, known at trigger time. |
+| `workflow` | PRE_BUILD | Yes | Yes | LOW | Tier E (GitHub Actions): GitHub Actions workflow id of the run (categorical), fixed when the run is requested. Unseen workflows are scored as missing. |
