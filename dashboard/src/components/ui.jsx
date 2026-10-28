@@ -48,10 +48,11 @@ export function Panel({ title, subtitle, className = '', children }) {
   </section>
 }
 
-export function StatCard({ label, value }) {
+export function StatCard({ label, value, note }) {
   return <div className="card card-hover tick p-5">
     <p className="label">{label}</p>
     <p className="readout mt-2.5 text-[26px] leading-none"><CountUp value={value} /></p>
+    {note && <p className="mt-2 text-xs text-ink-faint">{note}</p>}
   </div>
 }
 
