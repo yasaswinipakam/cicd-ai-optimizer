@@ -1,0 +1,50 @@
+{
+  "protocol": "phase1_v2_gha_confirmation_protocol.md",
+  "protocol_sha256": "e9bcd52deff8e4cfcdc9fa17fa38760eab6762cb1391913f529a478185e38cdb",
+  "inputs": [
+    "data/raw/final_research_dataset_MASTER.csv",
+    "data/raw/phase2_gha_confirm/gha_confirmation_dataset.csv"
+  ],
+  "settings": {
+    "primary_0h": [
+      "A_rf",
+      "C_rf",
+      "C_historyonly",
+      "C_repoprior",
+      "C_lgbmblend",
+      "E_lgbm",
+      "E_lgbmblend"
+    ],
+    "primary_6h": [
+      "C_rf",
+      "E_lgbmblend"
+    ],
+    "valid_only_0h": [
+      "C_rf",
+      "E_lgbmblend"
+    ]
+  },
+  "data": {
+    "primary": {
+      "first_attempt_push_pr_runs": 147243,
+      "dropped_completion_unknown": 687,
+      "runs": 146556,
+      "repositories": 60,
+      "prevalence": 0.19235650536313764
+    },
+    "valid_only": {
+      "first_attempt_push_pr_runs": 147243,
+      "dropped_completion_unknown": 687,
+      "dropped_never_executed_proxy": 676,
+      "runs": 145880,
+      "repositories": 60,
+      "prevalence": 0.1886139292569235
+    }
+  },
+  "primary_result": {
+    "mean_delta_within_repo_auc": 0.17873276782444703,
+    "folds_with_ci_above_zero": 5,
+    "folds": 5,
+    "verdict": "transfers"
+  }
+}

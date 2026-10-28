@@ -1,23 +1,52 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import client from '../api/client'
 import StatusBadge from '../components/StatusBadge'
-import { PageHeader, ScrambleText, TableShell } from '../components/ui'
+import { PageHeader, Panel, ScrambleText, TableShell } from '../components/ui'
+import { useModelInfo } from '../api/model'
+import { ChartInView, ContributionChart } from '../components/charts'
 import { axisProps, chartColors, tooltipProps } from '../theme/chart'
 
-function ExplanationChart({ explanation }) {
-  if (!explanation?.length) return null
-  const data = explanation.map(item => ({ ...item, magnitude: Math.abs(item.shap_value) }))
-  return <div className="inset-panel mt-3 h-44 p-3 pb-8"><p className="label mb-1 text-xs">Why this prediction</p><ResponsiveContainer><BarChart data={data} layout="vertical" margin={{ left: 35 }}><XAxis type="number" hide /><YAxis type="category" dataKey="feature" width={110} {...axisProps} tick={{ ...axisProps.tick, fontSize: 10 }} axisLine={false} /><Tooltip {...tooltipProps} formatter={(value, _name, props) => [props.payload.shap_value.toFixed(3), 'SHAP value']} /><Bar dataKey="magnitude" radius={[0, 4, 4, 0]}>{data.map((entry, index) => <Cell key={index} fill={entry.direction === 'increases_failure_risk' ? chartColors.danger : chartColors.info} />)}</Bar></BarChart></ResponsiveContainer></div>
+const OUTCOME_COLOR = { failed: chartColors.danger, passed: 'var(--color-success)' }
+const OUTCOME_LABEL = { failed: 'Failed', passed: 'Passed' }
+
+const OutcomeDot = ({ cx, cy, payload }) => <circle cx={cx} cy={cy} r={5} fill={OUTCOME_COLOR[payload.outcome] ?? 'var(--color-ink-faint)'} stroke="var(--color-surface)" strokeWidth={2} />
+
+// Predicted risk for each build in time order, with the real outcome as the dot color.
+function RiskTimeline({ builds, threshold }) {
+  if (builds.length < 2) return null
+  const data = [...builds].reverse().map((build, index) => ({
+    build: index + 1,
+    when: new Date(build.timestamp).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+    risk: +(build.failure_probability * 100).toFixed(1),
+    outcome: build.build_status,
+  }))
+  return <Panel className="mb-6" title="Risk over time" subtitle="Each dot is a build: its predicted risk, colored by what actually happened.">
+    <div className="mb-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-muted">
+      {[['Failed', chartColors.danger], ['Passed', 'var(--color-success)'], ['Outcome not reported', 'var(--color-ink-faint)']].map(([label, color]) =>
+        <span key={label} className="flex items-center gap-1.5"><span className="inline-block size-2.5 rounded-full" style={{ background: color }} />{label}</span>)}
+    </div>
+    <ChartInView className="h-56"><ResponsiveContainer>
+      <LineChart data={data} margin={{ top: 12, right: 12, left: -18, bottom: 0 }}>
+        <CartesianGrid stroke={chartColors.grid} vertical={false} />
+        <XAxis dataKey="build" {...axisProps} allowDecimals={false} tickFormatter={n => `#${n}`} />
+        <YAxis domain={[0, 100]} unit="%" {...axisProps} axisLine={false} />
+        {threshold != null && <ReferenceLine y={+(threshold * 100).toFixed(1)} stroke="var(--color-ink-muted)" strokeDasharray="4 4" label={{ value: 'alert threshold', position: 'insideTopRight', fill: 'var(--color-ink-muted)', fontSize: 10 }} />}
+        <Tooltip {...tooltipProps} labelFormatter={(_n, items) => `Build #${items?.[0]?.payload.build ?? ''} · ${items?.[0]?.payload.when ?? ''}`} formatter={(value, _name, item) => [`${value}% · ${OUTCOME_LABEL[item.payload.outcome] ?? 'outcome not reported'}`, 'Predicted risk']} />
+        <Line dataKey="risk" stroke={chartColors.accent} strokeWidth={2} dot={<OutcomeDot />} activeDot={{ r: 7 }} animationDuration={1200} />
+      </LineChart>
+    </ResponsiveContainer></ChartInView>
+  </Panel>
 }
 
-function RootCause({ build }) {
-  if (build.root_cause_label) return <>{build.root_cause_label}</>
-  if (build.build_status === 'failed' || build.predicted_status === 'failed') {
-    return <span className="text-ink-muted">No failed-test log available for root-cause analysis.</span>
-  }
-  return <span className="text-ink-faint">—</span>
+// Root causes and suggestions exist only for builds submitted with a failed-test log.
+function Diagnosis({ build }) {
+  if (!build.root_cause_label && !build.optimization_suggestion) return null
+  return <div className="mb-2 rounded-control border border-info/20 bg-info/5 p-3 text-xs">
+    {build.root_cause_label && <p className="text-ink">Likely cause: {build.root_cause_label}</p>}
+    {build.optimization_suggestion && <><b className="mt-1 block text-info">{build.optimization_suggestion.category}: {build.optimization_suggestion.title}</b><p className="mt-1 text-ink">{build.optimization_suggestion.suggestion}</p></>}
+  </div>
 }
 
 function TimingBadge({ status }) {
@@ -33,7 +62,6 @@ function TimingBadge({ status }) {
 }
 
 function JobTelemetry({ jobs, analyses, onShowAnalysis }) {
-  if (!jobs.length) return <p className="rounded-card border border-dashed border-line-strong p-5 text-sm text-ink-muted">No GitHub Actions job telemetry has arrived for this pipeline yet.</p>
   const seconds = value => value == null ? '—' : `${Math.round(value)}s`
   return <TableShell><table className="data-table min-w-[860px]"><thead><tr><th>Job</th><th>Completed</th><th>Duration</th><th>Historical p95</th><th>Runtime assessment</th><th>Failed-job diagnostics</th></tr></thead><tbody>{jobs.map(job => {
     const analysis = analyses[job.job_run_id]
@@ -47,6 +75,7 @@ export default function PipelineDetailPage() {
   const [builds, setBuilds] = useState([])
   const [jobs, setJobs] = useState([])
   const [analyses, setAnalyses] = useState({})
+  const model = useModelInfo()
 
   useEffect(() => {
     const encoded = encodeURIComponent(pipelineId)
@@ -74,5 +103,19 @@ export default function PipelineDetailPage() {
     URL.revokeObjectURL(url)
   }
 
-  return <><PageHeader title={pipelineId}>Pre-build risk scoring is separate from the runtime telemetry and post-failure evidence below.</PageHeader><section className="mb-10"><h2 className="mb-3 text-xl text-ink"><ScrambleText text="Runtime job telemetry and bottlenecks" /></h2><JobTelemetry jobs={jobs} analyses={analyses} onShowAnalysis={showFailureAnalysis} /></section><section><h2 className="mb-3 text-xl text-ink"><ScrambleText text="Pre-build predictions and completed-build history" /></h2><TableShell><table className="data-table min-w-[960px]"><thead><tr><th>Timestamp</th><th>Status</th><th>Failure probability</th><th>Input-profile anomaly</th><th>Root cause, optimization & explanation</th><th>Report</th></tr></thead><tbody>{builds.map(build => <tr key={build.id} className="align-top"><td className="text-[13px] whitespace-nowrap text-ink-muted tabular-nums">{new Date(build.timestamp).toLocaleString()}</td><td><StatusBadge status={build.build_status} /></td><td className="stat">{build.failure_probability == null ? '—' : `${(build.failure_probability * 100).toFixed(1)}%`}</td><td>{build.is_anomaly ? <><span className="chip chip-accent-2">Unusual pre-build profile</span><span className="mt-1.5 block text-xs text-ink-muted">Not a failure prediction</span></> : <span className="text-ink-muted">No unusual profile</span>}</td><td className="min-w-64"><RootCause build={build} />{build.optimization_suggestion && <div className="mt-2 rounded-control border border-info/20 bg-info/5 p-3 text-xs"><b className="text-info">{build.optimization_suggestion.category}: {build.optimization_suggestion.title}</b><p className="mt-1 text-ink">{build.optimization_suggestion.suggestion}</p></div>}<ExplanationChart explanation={build.explanation} /></td><td><button onClick={() => downloadReport(build)} className="btn btn-ghost btn-sm whitespace-nowrap">Download Report</button></td></tr>)}</tbody></table></TableShell></section></>
+  return <>
+    <PageHeader title={pipelineId}>Pre-build failure predictions for this pipeline, newest first.</PageHeader>
+    <RiskTimeline builds={builds.filter(build => build.failure_probability != null)} threshold={model?.decision_threshold} />
+    <TableShell><table className="data-table min-w-[820px]"><thead><tr><th>Timestamp</th><th>Status</th><th>Failure probability</th><th>Why</th><th>Report</th></tr></thead><tbody>
+      {builds.map(build => <tr key={build.id} className="align-top">
+        <td className="text-[13px] whitespace-nowrap text-ink-muted tabular-nums">{new Date(build.timestamp).toLocaleString()}</td>
+        <td><StatusBadge status={build.build_status} /></td>
+        <td className="stat">{build.failure_probability == null ? '—' : `${(build.failure_probability * 100).toFixed(1)}%`}</td>
+        <td className="min-w-72"><Diagnosis build={build} />{build.explanation?.length ? <ContributionChart explanation={build.explanation} height={170} /> : <span className="text-ink-faint">—</span>}</td>
+        <td><button onClick={() => downloadReport(build)} className="btn btn-ghost btn-sm whitespace-nowrap">Download report</button></td>
+      </tr>)}
+      {!builds.length && <tr><td className="text-ink-muted" colSpan="5">No builds yet.</td></tr>}
+    </tbody></table></TableShell>
+    {jobs.length > 0 && <section className="mt-10"><h2 className="mb-1 text-xl text-ink"><ScrambleText text="Runtime job telemetry" /></h2><p className="mb-3 text-sm text-ink-muted">From GitHub Actions webhooks, after jobs run; not used for prediction.</p><JobTelemetry jobs={jobs} analyses={analyses} onShowAnalysis={showFailureAnalysis} /></section>}
+  </>
 }

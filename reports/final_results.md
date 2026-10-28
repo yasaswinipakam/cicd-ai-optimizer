@@ -199,6 +199,37 @@ was fixed before any fit.
 
 Details: [`phase1_v2_gha_tier_e_results.md`](phase1_v2_gha_tier_e_results.md).
 
+#### Confirmation on 30 new repositories (pre-registered): confirms
+
+A second protocol was hashed before collection. It covers 30 new repositories
+(none used before) and a new window, 2026-08-15 to 09-30: 78,576 runs, 28.2% of
+them failures. The recipe and decision rule are unchanged.
+
+| Within-repo AUC, folds 6–10, 0h | Tier C RF | Tier E blend | Δ | Fold CIs > 0 |
+|---|---:|---:|---:|---:|
+| All runs | 0.763 | 0.911 | **+0.149** | **5/5** |
+| New breakages | 0.642 | 0.683 | +0.041 | 2/5 |
+| 6 h buffer | 0.741 | 0.846 | +0.105 | 5/5 |
+| Combined with the first GHA set (60 repos, secondary) | 0.685 | 0.864 | +0.179 | 5/5 |
+
+- **Verdict: confirms.** This settles the first test's "inconclusive".
+- **Recall@15%:** 0.43 vs 0.31.
+- **Not just persistence:** a naive "previous stream run failed" score gets
+  only 0.72 (exploratory check).
+- **Per repository:** Tier E wins in all 24 test repositories.
+- **Size varies by project:**
+
+  | Dataset | Gain |
+  |---|---:|
+  | Travis | +0.067 |
+  | First GHA test | +0.055 |
+  | Confirmation | +0.149 |
+
+- **First failures after a pass gain little.** On new breakages the gain is
+  small, and it vanishes with a 6 h delay.
+
+Details: [`phase1_v2_gha_confirmation_results.md`](phase1_v2_gha_confirmation_results.md).
+
 #### Previous baseline: walk-forward (folds 6–10, 0h finish buffer, Tier C RF)
 
 | Fold | Repos | Macro within-repo AUC | Recall@15% |

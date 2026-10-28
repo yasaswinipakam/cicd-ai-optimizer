@@ -17,10 +17,6 @@ fastapi==0.162.0
 uvicorn[standard]==0.54.0
 sqlalchemy==2.1.6
 pydantic==2.14.1
-python-jose[cryptography]==3.5.0
-passlib[bcrypt]==1.7.4
-bcrypt==4.0.1
-python-multipart==0.0.32
 pytest==9.1.1
 httpx==0.28.1
 reportlab==5.1.0

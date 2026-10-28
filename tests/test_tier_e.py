@@ -11,9 +11,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from api.auth.security import get_password_hash
 from api.db.database import Base, get_db
-from api.db.models import User, UserRole
 from api.main import app
 from api.routers.pipelines import get_predictor
 from src.features.schema import FEATURE_COLS
@@ -94,9 +92,6 @@ def client(artifacts):
     engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(engine)
     session_factory = sessionmaker(bind=engine, autocommit=False, autoflush=False)
-    with session_factory() as session:
-        session.add(User(username="dev", hashed_password=get_password_hash("pw"), role=UserRole.DEVELOPER))
-        session.commit()
 
     def override_get_db():
         db = session_factory()
@@ -109,8 +104,6 @@ def client(artifacts):
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_predictor] = lambda: predictor
     with TestClient(app) as test_client:
-        token = test_client.post("/auth/login", data={"username": "dev", "password": "pw"}).json()["access_token"]
-        test_client.headers["Authorization"] = f"Bearer {token}"
         yield test_client
     app.dependency_overrides.clear()
     Base.metadata.drop_all(engine)

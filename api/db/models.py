@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from enum import Enum
 
 from sqlalchemy import (
-    JSON, Boolean, Column, DateTime, Enum as SqlEnum, Float, ForeignKey,
+    JSON, Boolean, Column, DateTime, Float, ForeignKey,
     Integer, String, Text, UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
@@ -19,23 +18,6 @@ def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-class UserRole(str, Enum):
-    DEVELOPER = "developer"
-    ADMINISTRATOR = "administrator"
-
-
-class User(Base):
-    __tablename__ = "users"
-
-    id = Column(Integer, primary_key=True)
-    username = Column(String(100), unique=True, nullable=False, index=True)
-    hashed_password = Column(String(255), nullable=False)
-    role = Column(SqlEnum(UserRole), nullable=False, default=UserRole.DEVELOPER)
-    created_at = Column(DateTime(timezone=True), nullable=False, default=utc_now)
-
-    pipelines = relationship("Pipeline", back_populates="owner", cascade="all, delete-orphan")
-
-
 class Pipeline(Base):
     __tablename__ = "pipelines"
 
@@ -43,9 +25,7 @@ class Pipeline(Base):
     name = Column(String(255), nullable=False)
     status = Column(String(50), nullable=False, default="active")
     created_at = Column(DateTime(timezone=True), nullable=False, default=utc_now)
-    owner_id = Column(Integer, ForeignKey("users.id"), nullable=False)
 
-    owner = relationship("User", back_populates="pipelines")
     build_logs = relationship("BuildLog", back_populates="pipeline", cascade="all, delete-orphan")
     workflow_runs = relationship("WorkflowRun", back_populates="pipeline", cascade="all, delete-orphan")
     provider_workflow_outcomes = relationship("ProviderWorkflowOutcome", back_populates="pipeline", cascade="all, delete-orphan")

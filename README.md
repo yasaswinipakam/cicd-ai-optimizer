@@ -116,7 +116,7 @@ it must not automatically block CI builds. The fixed-volume policy analysis is i
 On the untouched temporal test period, the predeclared 5%, 10%, 15%, 20%, and 35%
 top-risk policies provide explicit alert-volume versus failure-capture trade-offs.
 
-Use the authenticated shadow endpoints to record a prediction before a CI result
+Use the shadow endpoints to record a prediction before a CI result
 exists, then attach the observed result later. They never change CI execution:
 
 ```text
@@ -151,6 +151,13 @@ breakdowns (overall, month, repository, and language) with:
 Initialize the local database with `.venv/bin/python -m api.db.init_db`, then run
 the API with `.venv/bin/uvicorn api.main:app --reload` and the dashboard with
 `cd dashboard && npm run dev`.
+
+**No sign-in.** The dashboard and API have no accounts, so anyone who can
+reach the API can read and submit builds. Run it locally or behind your own
+network controls. Webhook endpoints still require their shared secrets.
+
+`init_db` also migrates databases created by earlier versions: it removes the old
+accounts table and pipeline owners, and keeps every pipeline and build.
 
 ## Run with Docker
 

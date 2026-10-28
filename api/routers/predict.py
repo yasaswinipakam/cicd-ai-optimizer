@@ -1,11 +1,9 @@
-"""Authenticated, database-free prediction sandbox endpoints."""
+"""Database-free prediction sandbox endpoints."""
 
 from copy import deepcopy
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
-from api.auth.dependencies import get_current_user
-from api.db.models import User
 from api.routers.pipelines import get_predictor
 from api.schemas import (
     BuildFeaturesIn,
@@ -39,22 +37,24 @@ def _scenario_output(predictor: CICDPredictor, build_features: dict, include_exp
 @router.post("/whatif")
 def what_if_prediction(
     payload: BuildFeaturesIn,
-    current_user: User = Depends(get_current_user),
+    explain: bool = Query(False),
     predictor: CICDPredictor = Depends(get_predictor),
 ) -> dict:
     """Score hypothetical features and flag unusual pre-build input profiles without persistence."""
     prediction = predictor.predict_failure(payload.build_features)
     anomaly = predictor.detect_anomaly(payload.build_features)
-    return {
+    result = {
         "failure_probability": prediction["failure_probability"],
         "is_anomaly": anomaly["is_anomaly"],
     }
+    if explain:
+        result["explanation"] = predictor.full_analysis(payload.build_features, include_explanation=True)["explanation"]
+    return result
 
 
 @router.post("/whatif/optimization", response_model=OptimizationSimulationOut)
 def optimization_what_if(
     payload: OptimizationSimulationIn,
-    current_user: User = Depends(get_current_user),
     predictor: CICDPredictor = Depends(get_predictor),
 ) -> dict:
     """Compare one bounded hypothetical input with its unpersisted baseline."""

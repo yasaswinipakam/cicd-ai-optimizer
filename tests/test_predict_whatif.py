@@ -6,9 +6,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from api.auth.security import get_password_hash
 from api.db.database import Base, get_db
-from api.db.models import BuildLog, User, UserRole
+from api.db.models import BuildLog
 from api.main import app
 from api.routers.pipelines import get_predictor
 
@@ -16,13 +15,16 @@ from api.routers.pipelines import get_predictor
 class StubPredictor:
     def predict_failure(self, _features): return {"failure_probability": 0.42}
     def detect_anomaly(self, _features): return {"is_anomaly": False}
+    def full_analysis(self, _features, include_explanation=False):
+        return {"explanation": [{"feature": "git_diff_src_churn", "value": 2000.0, "shap_value": 0.3,
+                                 "direction": "increases_failure_risk"}] if include_explanation else []}
 
 
 @pytest.fixture
 def client():
     engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(engine); factory = sessionmaker(bind=engine)
-    session = factory(); session.add(User(username="whatif", hashed_password=get_password_hash("password"), role=UserRole.DEVELOPER)); session.commit()
+    session = factory()
     def override_db():
         db = factory()
         try: yield db
@@ -34,9 +36,16 @@ def client():
 
 def test_what_if_prediction_never_creates_build_records(client):
     test_client, factory = client
-    token = test_client.post("/auth/login", data={"username": "whatif", "password": "password"}).json()["access_token"]
     before = factory().query(BuildLog).count()
-    response = test_client.post("/predict/whatif", headers={"Authorization": f"Bearer {token}"}, json={"git_diff_src_churn": 2000, "gh_lang": "python"})
+    response = test_client.post("/predict/whatif", json={"git_diff_src_churn": 2000, "gh_lang": "python"})
     assert response.status_code == 200
     assert 0 <= response.json()["failure_probability"] <= 1
     assert factory().query(BuildLog).count() == before
+
+
+def test_what_if_explanation_is_opt_in(client):
+    test_client, _factory = client
+    plain = test_client.post("/predict/whatif", json={"git_diff_src_churn": 2000}).json()
+    explained = test_client.post("/predict/whatif?explain=true", json={"git_diff_src_churn": 2000}).json()
+    assert "explanation" not in plain
+    assert explained["explanation"][0]["feature"] == "git_diff_src_churn"

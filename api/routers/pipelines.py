@@ -1,8 +1,9 @@
-"""Authenticated prediction, build-history, and dashboard API endpoints."""
+"""Prediction, build-history, and dashboard API endpoints."""
 
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import Literal
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import tempfile
@@ -10,20 +11,21 @@ import tempfile
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session, joinedload
 
-from api.auth.dependencies import get_current_user
 from api.db.database import get_db
-from api.db.models import BuildLog, JobFailureAnalysis, JobRun, Pipeline, Prediction, User, WorkflowRun
+from api.db.models import BuildLog, JobFailureAnalysis, JobRun, Pipeline, Prediction, WorkflowRun
 from api.schemas import (
     BuildCreatedOut,
     BuildFeaturesIn,
     BuildLogOut,
     DashboardSummaryOut,
     FailureTrendOut,
-    JobTelemetryOut,
     JobFailureAnalysisOut,
     JobFailureLogIn,
+    JobTelemetryOut,
+    ModelInfoOut,
     OperationalDashboardOut,
     PipelineOut,
+    RiskDistributionOut,
     RootCauseSummaryOut,
     ShadowBuildCreatedOut,
     ShadowOutcomeIn,
@@ -50,13 +52,13 @@ def get_predictor() -> CICDPredictor:
         ) from error
 
 
-def _find_or_create_pipeline(identifier: str, db: Session, owner: User) -> Pipeline:
+def _find_or_create_pipeline(identifier: str, db: Session) -> Pipeline:
     """Resolve a numeric primary key or human-readable pipeline name."""
     pipeline = db.query(Pipeline).filter(Pipeline.name == identifier).first()
     if pipeline is None and identifier.isdigit():
         pipeline = db.get(Pipeline, int(identifier))
     if pipeline is None:
-        pipeline = Pipeline(name=identifier, status="active", owner_id=owner.id)
+        pipeline = Pipeline(name=identifier, status="active")
         db.add(pipeline)
         db.flush()
     return pipeline
@@ -142,11 +144,10 @@ def create_build(
     payload: BuildFeaturesIn,
     explain: bool = Query(False),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
     predictor: CICDPredictor = Depends(get_predictor),
 ) -> dict:
     """Analyze, persist, and return one new build for a pipeline."""
-    pipeline = _find_or_create_pipeline(pipeline_id, db, current_user)
+    pipeline = _find_or_create_pipeline(pipeline_id, db)
     now = datetime.now(timezone.utc)
     features, context = _with_stream_context(predictor, db, pipeline, payload.build_features, now)
     analysis = (
@@ -157,7 +158,8 @@ def create_build(
     prediction_data = analysis["prediction"]
     anomaly_data = analysis["anomaly"]
     root_cause = analysis.get("root_cause") or {}
-    observed_status = payload.build_status or prediction_data["predicted_status"]
+    # Without a reported status the outcome is unknown; never store the prediction as if observed.
+    observed_status = payload.build_status or "unknown"
     build_log = BuildLog(
         pipeline_id=pipeline.id,
         timestamp=now,
@@ -199,7 +201,6 @@ def create_shadow_build(
     payload: BuildFeaturesIn,
     explain: bool = Query(False),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
     predictor: CICDPredictor = Depends(get_predictor),
 ) -> dict:
     """Persist a non-blocking pre-build prediction that awaits an actual CI outcome.
@@ -208,7 +209,7 @@ def create_shadow_build(
     alter any CI build. Use the outcome endpoint after the CI provider reports
     `passed` or `failed` to create an auditable live-evaluation record.
     """
-    pipeline = _find_or_create_pipeline(pipeline_id, db, current_user)
+    pipeline = _find_or_create_pipeline(pipeline_id, db)
     now = datetime.now(timezone.utc)
     features, context = _with_stream_context(predictor, db, pipeline, payload.build_features, now)
     analysis = predictor.full_analysis(features, include_explanation=explain)
@@ -278,7 +279,6 @@ def record_shadow_outcome(
     build_id: int,
     payload: ShadowOutcomeIn,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
     predictor: CICDPredictor = Depends(get_predictor),
 ) -> dict:
     """Attach the observed CI result to a shadow record without rescoring it."""
@@ -328,23 +328,40 @@ def record_shadow_outcome(
     }
 
 
+SPARKLINE_BUILDS = 12
+
+
+@router.get("/model", response_model=ModelInfoOut)
+def model_info(predictor: CICDPredictor = Depends(get_predictor)) -> dict:
+    """Describe the deployed failure model, its alert threshold and its held-out results."""
+    metadata = getattr(getattr(predictor, "model", None), "metadata", None) or {}
+    return {
+        "model_name": predictor.best_model_name,
+        "training_mode": predictor.preprocessing.get("training_mode"),
+        "decision_threshold": predictor.decision_threshold,
+        "holdout_metrics": metadata.get("holdout_metrics"),
+    }
+
+
 @router.get("/pipelines", response_model=list[PipelineOut])
 def list_pipelines(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ) -> list[dict]:
     """List pipelines and their most recently analyzed build."""
     pipelines = db.query(Pipeline).order_by(Pipeline.created_at.desc()).offset(offset).limit(limit).all()
     output = []
     for pipeline in pipelines:
-        latest = (
+        recent = (
             db.query(BuildLog)
+            .options(joinedload(BuildLog.predictions))
             .filter(BuildLog.pipeline_id == pipeline.id)
             .order_by(BuildLog.timestamp.desc(), BuildLog.id.desc())
-            .first()
+            .limit(SPARKLINE_BUILDS)
+            .all()
         )
+        latest = recent[0] if recent else None
         latest_prediction = latest.predictions[0] if latest and latest.predictions else None
         output.append(
             {
@@ -353,6 +370,10 @@ def list_pipelines(
                 "status": pipeline.status,
                 "latest_build_status": latest.build_status if latest else None,
                 "latest_failure_probability": latest_prediction.failure_probability if latest_prediction else None,
+                # Oldest first, for the per-pipeline risk sparkline.
+                "recent_failure_probabilities": [
+                    log.predictions[0].failure_probability for log in reversed(recent) if log.predictions
+                ],
             }
         )
     return output
@@ -364,7 +385,6 @@ def list_builds(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ) -> list[dict]:
     """List one pipeline's build history, newest first."""
     pipeline = db.query(Pipeline).filter(Pipeline.name == pipeline_id).first()
@@ -397,7 +417,8 @@ def list_builds(
                     is_anomaly=log.predictions[0].is_anomaly,
                     anomaly_score=log.predictions[0].anomaly_score,
                 )
-                if log.predictions and log.build_status == "failed"
+                # Without a failed-test log there is no root cause, and the suggestion would be generic filler.
+                if log.predictions and log.build_status == "failed" and log.predictions[0].root_cause_label
                 else None
             ),
             "explanation": log.raw_features.get("_explanation") if log.raw_features else None,
@@ -411,7 +432,6 @@ def list_job_telemetry(
     pipeline_id: str,
     limit: int = Query(100, ge=1, le=500),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ) -> list[dict]:
     """Return persisted runtime telemetry for bottleneck/stall visualization.
 
@@ -460,7 +480,6 @@ def ingest_job_failure_log(
     job_run_id: int,
     payload: JobFailureLogIn,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ) -> dict:
     """Store and classify an actual failed-job log after redaction.
 
@@ -505,7 +524,6 @@ def get_job_failure_analysis(
     pipeline_id: str,
     job_run_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ) -> dict:
     """Return a stored post-failure diagnostic without exposing raw log text."""
     analysis = (
@@ -533,7 +551,6 @@ def download_build_report(
     pipeline_id: str,
     build_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ) -> Response:
     """Generate and return a temporary PDF report for one persisted build."""
     pipeline = db.query(Pipeline).filter(Pipeline.name == pipeline_id).first()
@@ -555,7 +572,7 @@ def download_build_report(
     top_terms = (prediction.root_cause_label or "").split(",") if prediction.root_cause_label else []
     suggestion = (
         get_suggestion(top_terms, is_anomaly=prediction.is_anomaly, anomaly_score=prediction.anomaly_score)
-        if build_log.build_status == "failed" else None
+        if build_log.build_status == "failed" and top_terms else None
     )
     build_data = {
         "pipeline_id": pipeline.name,
@@ -587,13 +604,14 @@ def download_build_report(
 
 @router.get("/dashboard/summary", response_model=DashboardSummaryOut)
 def dashboard_summary(
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
+    db: Session = Depends(get_db)
 ) -> dict:
     """Return system-wide prediction and root-cause aggregates."""
     logs = db.query(BuildLog).options(joinedload(BuildLog.predictions)).all()
     predictions = [prediction for log in logs for prediction in log.predictions]
     total = len(logs)
-    failure_rate = sum(log.build_status == "failed" for log in logs) / total if total else 0.0
+    outcomes = [failed for log in logs if (failed := _observed_outcome(log)[1]) is not None]
+    failure_rate = sum(outcomes) / len(outcomes) if outcomes else 0.0
     anomaly_count = sum(prediction.is_anomaly for prediction in predictions)
     grouped: dict[tuple[int, str | None], int] = {}
     for prediction in predictions:
@@ -605,6 +623,7 @@ def dashboard_summary(
         "total_builds_analyzed": total,
         "pipelines_monitored": db.query(Pipeline).count(),
         "overall_failure_rate": failure_rate,
+        "builds_with_outcome": len(outcomes),
         "anomalies_detected": anomaly_count,
         "top_root_causes": [
             {"cluster_id": cluster_id, "label": label, "count": count}
@@ -613,33 +632,81 @@ def dashboard_summary(
     }
 
 
+@router.get("/dashboard/risk-distribution", response_model=RiskDistributionOut)
+def risk_distribution(
+    threshold: float | None = Query(None, ge=0, le=1), db: Session = Depends(get_db)
+) -> dict:
+    """Count predictions in ten equal failure-probability bins, and how many reach ``threshold``."""
+    counts = [0] * 10
+    probabilities = [probability for (probability,) in db.query(Prediction.failure_probability).all()]
+    for probability in probabilities:
+        counts[min(int(probability * 10), 9)] += 1
+    return {
+        "bins": [{"start": i / 10, "end": (i + 1) / 10, "count": count} for i, count in enumerate(counts)],
+        "total": len(probabilities),
+        "flagged": None if threshold is None else sum(probability >= threshold for probability in probabilities),
+    }
+
+
 @router.get("/dashboard/failure-trends", response_model=list[FailureTrendOut])
 def failure_trends(
     days: int = Query(30, ge=1, le=365),
+    granularity: Literal["day", "build"] = Query("day"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ) -> list[dict]:
-    """Return daily build totals and failure rates for the requested lookback."""
+    """Failure risk and outcomes over time.
+
+    ``day``: per day, the average predicted risk of scored builds and the
+    failure rate over builds with a reported outcome (null when none).
+    ``build``: one point per scored build in time order, with its predicted
+    risk and the running failure rate of reported outcomes so far; useful
+    while there are too few days for a daily trend.
+    """
     since = datetime.now(timezone.utc) - timedelta(days=days)
-    logs = db.query(BuildLog).filter(BuildLog.timestamp >= since).order_by(BuildLog.timestamp).all()
-    grouped: dict[str, list[BuildLog]] = {}
+    logs = (
+        db.query(BuildLog).options(joinedload(BuildLog.predictions))
+        .filter(BuildLog.timestamp >= since).order_by(BuildLog.timestamp, BuildLog.id).all()
+    )
+    if granularity == "build":
+        points, reported, failed_so_far = [], 0, 0
+        for log in logs:
+            failed = _observed_outcome(log)[1]
+            if failed is not None:
+                reported += 1; failed_so_far += failed
+            if log.predictions:
+                points.append({
+                    "date": _as_utc(log.timestamp).isoformat(),
+                    "total_builds": reported, "failed_builds": failed_so_far,
+                    "failure_rate": failed_so_far / reported if reported else None,
+                    "scored_builds": 1, "average_predicted_risk": log.predictions[0].failure_probability,
+                })
+        return points
+    risks: dict[str, list[float]] = {}
+    outcomes: dict[str, list[bool]] = {}
     for log in logs:
-        date_key = log.timestamp.date().isoformat()
-        grouped.setdefault(date_key, []).append(log)
+        day = log.timestamp.date().isoformat()
+        if log.predictions:
+            risks.setdefault(day, []).append(log.predictions[0].failure_probability)
+        failed = _observed_outcome(log)[1]
+        if failed is not None:
+            outcomes.setdefault(day, []).append(failed)
+    days_seen = sorted(set(risks) | set(outcomes))
     return [
         {
-            "date": date_key,
-            "total_builds": len(day_logs),
-            "failed_builds": sum(log.build_status == "failed" for log in day_logs),
-            "failure_rate": sum(log.build_status == "failed" for log in day_logs) / len(day_logs),
+            "date": day,
+            "total_builds": len(outcomes.get(day, [])),
+            "failed_builds": sum(outcomes.get(day, [])),
+            "failure_rate": sum(outcomes[day]) / len(outcomes[day]) if day in outcomes else None,
+            "scored_builds": len(risks.get(day, [])),
+            "average_predicted_risk": sum(risks[day]) / len(risks[day]) if day in risks else None,
         }
-        for date_key, day_logs in grouped.items()
+        for day in days_seen
     ]
 
 
 @router.get("/dashboard/operational-summary", response_model=OperationalDashboardOut)
 def operational_dashboard_summary(
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
+    db: Session = Depends(get_db)
 ) -> dict:
     """Aggregate runtime bottleneck and post-failure evidence across pipelines.
 

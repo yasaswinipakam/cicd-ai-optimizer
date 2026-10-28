@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import hmac
 import json
 import os
@@ -12,8 +13,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from api.db.database import get_db
-from api.db.models import JobRun, JobStepRun, Pipeline, ProviderWorkflowOutcome, User, WorkflowRun
-from api.auth.security import verify_github_signature
+from api.db.models import JobRun, JobStepRun, Pipeline, ProviderWorkflowOutcome, WorkflowRun
 from api.diagnostics_service import save_job_failure_analysis
 from api.routers.pipelines import _find_or_create_pipeline, create_build, get_predictor
 from api.schemas import BuildFeaturesIn, GitHubJobLogCollectorIn, GitHubJobTelemetryCollectorIn, JobFailureAnalysisOut
@@ -22,6 +22,14 @@ from src.models.bottleneck import assess_job_timing
 
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
+
+
+def verify_github_signature(payload_bytes: bytes, signature_header: str | None, secret: str) -> bool:
+    """Verify GitHub's HMAC-SHA256 webhook signature in constant time."""
+    if not signature_header or not signature_header.startswith("sha256="):
+        return False
+    expected = hmac.new(secret.encode("utf-8"), payload_bytes, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, signature_header.removeprefix("sha256="))
 
 
 def verify_webhook_secret(x_webhook_secret: str | None = Header(default=None)) -> None:
@@ -38,17 +46,6 @@ def verify_collector_secret(x_ci_diagnostics_secret: str | None = Header(default
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Log collector is not configured")
     if not x_ci_diagnostics_secret or not hmac.compare_digest(x_ci_diagnostics_secret, expected):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid diagnostics collector secret")
-
-
-def _webhook_owner(db: Session) -> User:
-    """Attribute automated build records to the first configured application user."""
-    user = db.query(User).order_by(User.id).first()
-    if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Initialize the database before accepting webhooks.",
-        )
-    return user
 
 
 def _parse_provider_time(value: Any) -> datetime | None:
@@ -146,8 +143,7 @@ def _github_job_telemetry(payload: dict[str, Any], db: Session) -> dict:
     provider_job_id = job_payload.get("id")
     if provider_run_id is None or provider_job_id is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="workflow_job id and run_id are required")
-    owner = _webhook_owner(db)
-    pipeline = _find_or_create_pipeline(_pipeline_name_from_github(payload, "github-actions"), db, owner)
+    pipeline = _find_or_create_pipeline(_pipeline_name_from_github(payload, "github-actions"), db)
     workflow = (
         db.query(WorkflowRun)
         .filter(
@@ -255,10 +251,9 @@ def _record_github_workflow_outcome(payload: dict[str, Any], db: Session) -> dic
     conclusion = str(run.get("conclusion") or "").lower()
     if conclusion not in {"success", "failure", "cancelled", "timed_out", "action_required"}:
         return {"accepted": True, "ignored": True, "reason": "unsupported or missing workflow conclusion"}
-    owner = _webhook_owner(db)
     repository = run.get("head_repository") or payload.get("repository") or {}
     pipeline_name = repository if isinstance(repository, str) else repository.get("full_name") or repository.get("name") or str(provider_run_id)
-    pipeline = _find_or_create_pipeline(pipeline_name, db, owner)
+    pipeline = _find_or_create_pipeline(pipeline_name, db)
     existing = (
         db.query(ProviderWorkflowOutcome)
         .filter(
@@ -399,6 +394,5 @@ def jenkins_webhook(
         payload=build,
         explain=False,
         db=db,
-        current_user=_webhook_owner(db),
         predictor=predictor,
     )
