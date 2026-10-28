@@ -152,6 +152,18 @@ Initialize the local database with `.venv/bin/python -m api.db.init_db`, then ru
 the API with `.venv/bin/uvicorn api.main:app --reload` and the dashboard with
 `cd dashboard && npm run dev`.
 
+**Accounts.** No password is built in.
+- **Admin:** `admin` takes its password from `ADMIN_PASSWORD` (at least 12
+  characters). If that is unset, a random password is generated and printed
+  once.
+- **Developer:** a `dev` account is created only when `DEV_PASSWORD` is set.
+- **Older databases:** earlier versions seeded both accounts with a shared
+  default password. To change a password on an existing database, run:
+
+```bash
+.venv/bin/python -m api.db.init_db --set-password admin
+```
+
 ## Run with Docker
 
 Copy the environment template and replace every placeholder with a real secret:
