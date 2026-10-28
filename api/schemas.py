@@ -115,6 +115,9 @@ class BuildCreatedOut(PredictionOut):
     build_log_id: int
     pipeline_id: int
     pipeline_name: str
+    # Tier E history/in-flight values the server derived for this build;
+    # None when the deployed model does not use them. Missing history is null.
+    stream_context: dict[str, float | None] | None = None
 
 
 class ShadowBuildCreatedOut(PredictionOut):
@@ -123,6 +126,7 @@ class ShadowBuildCreatedOut(PredictionOut):
     build_log_id: int
     pipeline_id: int
     pipeline_name: str
+    stream_context: dict[str, float | None] | None = None
     decision_threshold: float
     is_alert: bool
     model_version: str

@@ -23,8 +23,23 @@ const interventionOptions = {
   gh_diff_files_modified: { label: 'Files modified', control: 'filesModified', max: 500 },
 }
 
+// The what-if sandbox has no pipeline history, so it assumes an established
+// pipeline: ten finished builds on this branch at the training failure rate
+// (about 20%), nothing else running, with the toggle setting the last outcome.
+function typicalHistory(previousFailed) {
+  const last = previousFailed ? 1 : 0
+  return {
+    hist_prev_failed: last, hist_stream_prev_failed: last, hist_prevbuild_failed: last, hist_stream_streak: last,
+    hist_repo_fail_rate_5: 0.2, hist_repo_fail_rate_all: 0.2, hist_repo_ewma: 0.2,
+    hist_stream_fail_rate_5: 0.2, hist_stream_fail_rate_all: 0.2, hist_stream_completed: 10,
+    ctx_prevbuild_pending: 0, ctx_stream_pending: 0, ctx_repo_pending: 0, ctx_repo_started_1h: 1,
+    ctx_hours_since_stream_start: 24,
+  }
+}
+
 function buildFeatures(controls) {
   return {
+    ...typicalHistory(controls.previousFailed),
     git_diff_src_churn: Number(controls.srcChurn),
     git_diff_test_churn: Number(controls.testChurn),
     gh_diff_files_added: Number(controls.filesAdded),
@@ -216,7 +231,8 @@ export default function WhatIfPage() {
               </select>
             </label>
             <label className="flex items-center gap-2.5 text-sm text-ink"><input type="checkbox" name="isPr" checked={controls.isPr} onChange={update} className="size-4" /> Pull request build</label>
-            <label className="flex items-center gap-2.5 text-sm text-ink"><input type="checkbox" name="previousFailed" checked={controls.previousFailed} onChange={update} className="size-4" /> Previous build failed</label>
+            <label className="flex items-center gap-2.5 text-sm text-ink"><input type="checkbox" name="previousFailed" checked={controls.previousFailed} onChange={update} className="size-4" /> Previous build on this branch failed</label>
+            <p className="-mt-2 text-xs text-ink-faint">Assumes an established pipeline: ten finished builds on this branch at a 20% failure rate, nothing else running.</p>
           </div>
         </section>
 

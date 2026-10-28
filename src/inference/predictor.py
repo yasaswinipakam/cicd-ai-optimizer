@@ -6,6 +6,7 @@ import hashlib
 from pathlib import Path
 
 import joblib
+import numpy as np
 import pandas as pd
 
 from src.features.availability_guard import assert_features_available_for_prediction
@@ -17,9 +18,17 @@ from src.inference.calibration import ProbabilityCalibrator
 from src.features.engineer import HISTORY_COLS, STREAK_COLS
 from src.features.schema import DIRECT_PREBUILD_FEATURE_COLS
 
+TIER_E_MODEL_NAME = "tier_e_blend"
+TIME_COLS = ("hour", "day_of_week", "month", "is_weekend", "is_night")
+
 
 class CICDPredictor:
-    """Score one incoming build without refitting any training preprocessing."""
+    """Score one incoming build without refitting any training preprocessing.
+
+    The failure model is either a 39-feature classifier (random forest etc.)
+    or the Tier E blend, which also reads stream history and in-flight
+    context.  The anomaly detector always uses the 39-feature matrix.
+    """
 
     def __init__(self, artifacts_dir: str = "artifacts"):
         self.artifacts_dir = Path(artifacts_dir)
@@ -47,13 +56,30 @@ class CICDPredictor:
         self.root_cause_clusterer = RootCauseClusterer.load(
             str(self.artifacts_dir / "root_cause_clusterer.joblib")
         )
-        self.feature_cols: list[str] = self.preprocessing["feature_cols"]
-        assert_features_available_for_prediction(self.feature_cols)
+        self.anomaly_feature_cols: list[str] = self.preprocessing["feature_cols"]
+        assert_features_available_for_prediction(self.anomaly_feature_cols)
+        self.is_tier_e = self.best_model_name == TIER_E_MODEL_NAME
+        if self.is_tier_e:
+            # The blend carries its own global Platt map and threshold; the
+            # random forest's calibrator and threshold do not apply to it.
+            self.calibration_method, self.calibrator, self.calibrator_artifact_sha256 = "platt_global", None, None
+            self.preprocessing = {**self.preprocessing, "training_mode": f"tier_e:{self.model.metadata['variant']}"}
+            self.feature_cols: list[str] = self.model.feature_cols
+            assert_features_available_for_prediction(self.feature_cols)
+        else:
+            self.feature_cols = self.anomaly_feature_cols
         self._explainer: PredictionExplainer | None = None
+
+    @property
+    def uses_stream_context(self) -> bool:
+        """Whether callers should supply Tier E history (see src.features.stream_context)."""
+        return self.is_tier_e
 
     @property
     def decision_threshold(self) -> float:
         """Return the persisted operating threshold, defaulting for legacy artifacts."""
+        if self.is_tier_e:
+            return float(self.model.metadata["decision_threshold"])
         return float(self.preprocessing.get("decision_threshold", 0.5))
 
     @staticmethod
@@ -134,19 +160,76 @@ class CICDPredictor:
             row[col] = self._number(raw.get(col), 0.0)
 
         # Reindexing enforces the training schema and supplies defaults if it expands later.
-        return pd.DataFrame([row]).reindex(columns=self.feature_cols, fill_value=0.0)
+        return pd.DataFrame([row]).reindex(columns=self.anomaly_feature_cols, fill_value=0.0)
 
     def _prepared_features(self, build_features: dict):
         """Transform a live build into the same imputed matrix used in training."""
         engineered = self._engineer_single_row(build_features)
         values = self.preprocessing["imputer"].transform(engineered)
-        return pd.DataFrame(values, columns=self.feature_cols)
+        return pd.DataFrame(values, columns=self.anomaly_feature_cols)
+
+    @staticmethod
+    def _number_or_missing(value) -> float:
+        converted = pd.to_numeric(pd.Series([value]), errors="coerce").iloc[0]
+        return float("nan") if pd.isna(converted) else float(converted)
+
+    def _tier_e_frame(self, build_features: dict) -> pd.DataFrame:
+        """One Tier E row: absent history stays missing (cold start); absent change inputs get training medians.
+
+        History and in-flight columns come from ``stream_context`` (the API
+        derives them from the pipeline's stored builds).  Time features follow
+        preprocessing: UTC hour, weekday, month, weekend, night = 00-05h; a
+        payload without a start time is scored as starting now.
+        """
+        raw = dict(build_features)
+        timestamp = pd.to_datetime(raw.get("gh_build_started_at"), errors="coerce", utc=True)
+        if pd.isna(timestamp):
+            timestamp = pd.Timestamp.now(tz="UTC")
+        derived = {
+            "hour": timestamp.hour, "day_of_week": timestamp.day_of_week, "month": timestamp.month,
+            "is_weekend": int(timestamp.day_of_week in (5, 6)), "is_night": int(0 <= timestamp.hour < 6),
+            "is_master": int(str(raw.get("git_branch", "")) == "master"),
+            "gh_is_pr": int(str(raw.get("gh_is_pr", "")).strip().lower() in ("true", "1", "1.0")),
+        }
+        fill = getattr(self.model, "input_fill", {})
+        row = {}
+        for column in self.model.numeric:
+            if column in derived and (column not in TIME_COLS or raw.get(column) is None):
+                row[column] = float(derived[column])
+            else:
+                value = self._number_or_missing(raw.get(column))
+                # Change/repository inputs were never missing in training: use the training median.
+                row[column] = fill[column] if np.isnan(value) and column in fill else value
+        for column in self.model.categorical:
+            value = raw.get(column)
+            row[column] = None if value is None or pd.isna(value) else str(value)
+        return pd.DataFrame([row], columns=self.feature_cols)
+
+    def _tier_e_explanation(self, build_features: dict, top_n: int = 8) -> list[dict]:
+        """Top SHAP contributions of the blend's binary half, for observed numeric inputs."""
+        frame = self._tier_e_frame(build_features)
+        contributions = self.model.contributions(frame).iloc[0]
+        row = frame.iloc[0]
+        items = [
+            {
+                "feature": feature,
+                "value": float(row[feature]),
+                "shap_value": float(contributions[feature]),
+                "direction": "increases_failure_risk" if contributions[feature] >= 0 else "decreases_failure_risk",
+            }
+            # Missing history and categorical inputs have no numeric value to show.
+            for feature in self.model.numeric if pd.notna(row[feature])
+        ]
+        return sorted(items, key=lambda item: abs(item["shap_value"]), reverse=True)[:top_n]
 
     def predict_failure(self, build_features: dict) -> dict:
         """Return failure probability, binary status prediction, and confidence."""
-        matrix = self._prepared_features(build_features)
-        model_input = self.preprocessing["scaler"].transform(matrix) if self.best_model_name == "svm" else matrix
-        raw_probability = float(self.model.predict_proba(model_input)[0, 1])
+        if self.is_tier_e:
+            raw_probability = float(self.model.predict_proba(self._tier_e_frame(build_features))[0, 1])
+        else:
+            matrix = self._prepared_features(build_features)
+            model_input = self.preprocessing["scaler"].transform(matrix) if self.best_model_name == "svm" else matrix
+            raw_probability = float(self.model.predict_proba(model_input)[0, 1])
         probability = float(self.calibrator.transform([raw_probability])[0]) if self.calibrator else raw_probability
         predicted_status = "failed" if probability >= self.decision_threshold else "passed"
         return {
@@ -197,7 +280,9 @@ class CICDPredictor:
         else:
             optimization_suggestion = None
         explanation = []
-        if include_explanation:
+        if include_explanation and self.is_tier_e:
+            explanation = self._tier_e_explanation(build_features)
+        elif include_explanation:
             if self._explainer is None:
                 self._explainer = PredictionExplainer(self.model, self.feature_cols)
             explanation = self._explainer.explain(self._prepared_features(build_features))

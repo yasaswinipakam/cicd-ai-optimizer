@@ -1,8 +1,9 @@
 # Feature Availability Registry
 
 This registry inventories all 66 columns in the raw TravisTorrent export and the
-19 derived columns plus 20 direct pre-build columns that may enter the prediction matrix. The derived records are
-included so runtime enforcement can validate `FEATURE_COLS` directly. "Used by
+19 derived columns plus 20 direct pre-build columns that may enter the prediction matrix, and the
+15 Tier E history and in-flight columns used by the deployed `tier_e_blend` model. The derived records are
+included so runtime enforcement can validate `FEATURE_COLS` and the Tier E schema directly. "Used by
 model" includes raw inputs that feed a derived production feature.
 
 | Feature | Stage | At prediction time | Used by model | Leakage risk | Reason |
@@ -92,3 +93,18 @@ model" includes raw inputs that feed a derived production feature.
 | `repo_streak_fails` | PRE_BUILD | Yes | Yes | LOW | Consecutive failures immediately before this build (resets on success). Finish-time-safe heap protocol; cold-start default 0.0. |
 | `repo_builds_since_success` | PRE_BUILD | Yes | Yes | LOW | Builds completed since the last successful build for this repo. Finish-time-safe heap protocol; cold-start default 0.0. |
 | `repo_hours_since_last_build` | PRE_BUILD | Yes | Yes | LOW | Hours between last completed build's finish time and this build's start. Long gaps signal dormant repos resuming. Cold-start default 0.0. |
+| `hist_prev_failed` | PRE_BUILD | Yes | Yes | LOW | Tier E: outcome of the most recently completed build in this repository. Only builds that finished strictly before this build started; cold start is missing (LightGBM-native). |
+| `hist_repo_fail_rate_5` | PRE_BUILD | Yes | Yes | LOW | Tier E: failure rate of the last 5 completed builds in this repository. Only builds that finished strictly before this build started; cold start is missing (LightGBM-native). |
+| `hist_repo_fail_rate_all` | PRE_BUILD | Yes | Yes | LOW | Tier E: failure rate of all completed builds in this repository. Only builds that finished strictly before this build started; cold start is missing (LightGBM-native). |
+| `hist_stream_prev_failed` | PRE_BUILD | Yes | Yes | LOW | Tier E: outcome of the most recently completed build on this stream. Stream = this pull request, or the branch for push builds. Only builds that finished strictly before this build started; cold start is missing (LightGBM-native). |
+| `hist_stream_fail_rate_5` | PRE_BUILD | Yes | Yes | LOW | Tier E: failure rate of the last 5 completed builds on this stream. Stream = this pull request, or the branch for push builds. Only builds that finished strictly before this build started; cold start is missing (LightGBM-native). |
+| `hist_stream_fail_rate_all` | PRE_BUILD | Yes | Yes | LOW | Tier E: failure rate of all completed builds on this stream. Stream = this pull request, or the branch for push builds. Only builds that finished strictly before this build started; cold start is missing (LightGBM-native). |
+| `hist_stream_completed` | PRE_BUILD | Yes | Yes | LOW | Tier E: number of completed builds on this stream (0 at cold start). Stream = this pull request, or the branch for push builds. Only builds that finished strictly before this build started; cold start is missing (LightGBM-native). |
+| `hist_stream_streak` | PRE_BUILD | Yes | Yes | LOW | Tier E: consecutive failures at the end of this stream's completed history. Stream = this pull request, or the branch for push builds. Only builds that finished strictly before this build started; cold start is missing (LightGBM-native). |
+| `hist_prevbuild_failed` | PRE_BUILD | Yes | Yes | LOW | Tier E: outcome of the previous build on the same branch (tr_prev_build), if it has finished. Only builds that finished strictly before this build started; cold start is missing (LightGBM-native). |
+| `hist_repo_ewma` | PRE_BUILD | Yes | Yes | LOW | Tier E: exponentially weighted (alpha 0.2) repository failure rate in finish order. Only builds that finished strictly before this build started; cold start is missing (LightGBM-native). |
+| `ctx_prevbuild_pending` | PRE_BUILD | Yes | Yes | LOW | Tier E in-flight: 1 if the previous build on the same branch has started but not finished. Uses only the existence of earlier build starts, never their outcomes. |
+| `ctx_stream_pending` | PRE_BUILD | Yes | Yes | LOW | Tier E in-flight: 1 if the latest earlier build on this stream is still running. Stream = this pull request, or the branch for push builds. Uses only the existence of earlier build starts, never their outcomes. |
+| `ctx_repo_pending` | PRE_BUILD | Yes | Yes | LOW | Tier E in-flight: number of earlier builds in this repository still running. Uses only the existence of earlier build starts, never their outcomes. |
+| `ctx_repo_started_1h` | PRE_BUILD | Yes | Yes | LOW | Tier E in-flight: number of builds started in this repository in the previous hour. Uses only the existence of earlier build starts, never their outcomes. |
+| `ctx_hours_since_stream_start` | PRE_BUILD | Yes | Yes | LOW | Tier E in-flight: hours since the latest earlier build on this stream started. Stream = this pull request, or the branch for push builds. Uses only the existence of earlier build starts, never their outcomes. |
