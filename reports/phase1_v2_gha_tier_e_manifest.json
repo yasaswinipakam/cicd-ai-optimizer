@@ -1,0 +1,46 @@
+{
+  "protocol": "phase1_v2_gha_tier_e_protocol.md",
+  "protocol_sha256": "b4121c6a085626de0835715fd8f68a3e9d1aa5448bf1d26fff775a4c427d4186",
+  "settings": {
+    "primary_0h": [
+      "A_rf",
+      "C_rf",
+      "C_historyonly",
+      "C_repoprior",
+      "C_lgbmblend",
+      "E_lgbm",
+      "E_lgbmblend"
+    ],
+    "primary_6h": [
+      "C_rf",
+      "E_lgbmblend"
+    ],
+    "valid_only_0h": [
+      "C_rf",
+      "E_lgbmblend"
+    ]
+  },
+  "data": {
+    "primary": {
+      "first_attempt_push_pr_runs": 68667,
+      "dropped_completion_unknown": 687,
+      "runs": 67980,
+      "repositories": 30,
+      "prevalence": 0.08851132686084143
+    },
+    "valid_only": {
+      "first_attempt_push_pr_runs": 68667,
+      "dropped_completion_unknown": 687,
+      "dropped_never_executed_proxy": 648,
+      "runs": 67332,
+      "repositories": 30,
+      "prevalence": 0.07973920275649023
+    }
+  },
+  "primary_result": {
+    "mean_delta_within_repo_auc": 0.05490952339035214,
+    "folds_with_ci_above_zero": 3,
+    "folds": 5,
+    "verdict": "inconclusive"
+  }
+}

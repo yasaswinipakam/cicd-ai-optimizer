@@ -182,6 +182,23 @@ Sources: `reports/phase1_v2_new_breakage.csv` (per fold, model and stratum,
 with CIs), `reports/phase1_v2_new_breakage_vs_c.csv` (paired deltas),
 `scripts/analyze_phase1_new_breakage.py`.
 
+### External test on GitHub Actions (pre-registered)
+
+The frozen recipe was rerun on fresh data: 67,980 first-attempt GitHub Actions
+`push`/`pull_request` runs from 30 repositories, covering 2025–26. The protocol
+was fixed before any fit.
+
+| Within-repo AUC, folds 6–10, 0h | Tier C RF | Tier E blend | Δ |
+|---|---:|---:|---:|
+| All runs | 0.715 | 0.770 | +0.055 |
+
+- **Within-repo AUC:** Δ is positive in all 5 folds, but only 3 of 5 fold CIs
+  exclude 0. The protocol required 4, so the verdict is **inconclusive**.
+- **Recall@15%:** 0.48 vs 0.37, with the CI excluding 0 in 4 of 5 folds.
+- **6 h finish buffer:** the gain shrinks to +0.021.
+
+Details: [`phase1_v2_gha_tier_e_results.md`](phase1_v2_gha_tier_e_results.md).
+
 #### Previous baseline: walk-forward (folds 6–10, 0h finish buffer, Tier C RF)
 
 | Fold | Repos | Macro within-repo AUC | Recall@15% |
