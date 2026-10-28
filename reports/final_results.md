@@ -137,6 +137,51 @@ Sources: `reports/phase1_v2_walkforward_tier_e_vs_c.csv` (paired repository
 bootstrap), `reports/phase1_v2_walkforward_tier_e_summary.csv`,
 `scripts/compare_phase1_walkforward_tier_e.py`.
 
+### New breakages only (post-hoc rescoring of the saved predictions)
+
+Much of the headline comes from builds on a branch or PR that is already red.
+In folds 7–10, **55% of failures** occur on streams whose last known outcome was
+a failure (64% of those builds fail).  Only **25% of failures** are new breakages,
+meaning the immediately preceding build on the same stream passed.  Those
+builds fail at just 6.6%.  To check that the model does more than persistence,
+the saved fold predictions were rescored on that subset.  Nothing was refit,
+and the subset is defined by the outcome of the previous build, which is never
+used as a feature.
+
+| Finish buffer | Repo last-5 rate (persistence) | Tier C RF | **Tier E blend** | Δ E − C |
+|---:|---:|---:|---:|---:|
+| 0h | 0.504 | 0.556 | **0.622** | +0.066 |
+| 1h | — | 0.540 | **0.600** | +0.060 |
+| 6h | — | 0.535 | **0.601** | +0.066 |
+
+Macro within-repo AUC on new-breakage builds, mean of folds 7–10, with about
+420–450 repositories per fold.  Per-fold 0h Tier E: 0.637 / 0.625 / 0.618 / 0.607,
+each with a repository-bootstrap 95% CI of about ±0.02.  The E − C delta's CI is
+above 0 in every fold at every buffer; the smallest lower bound is +0.026.
+
+At 0h, with a 15% budget taken within the new-breakage builds, Tier E catches
+30% of new breakages (lift **1.78×**).  Tier C RF catches 24% (1.40×).
+
+- **The honest headline for fresh breakages is ~0.62, not 0.70.**  The
+  0.698 figure stands as an all-builds number, but it partly reflects
+  "already failing" streams.
+- **Persistence explains none of the new-breakage signal.**  The
+  repository last-5 rate is at chance (0.504) on this subset.  The remaining
+  0.62 comes from change, stream and in-flight context.
+- **Tier E's advantage over Tier C is not a persistence artifact.**  It holds
+  undiminished on new breakages (+0.066 vs +0.070 on all builds).
+- On already-failing streams, Tier C RF ranks *below chance* (0.484) at
+  telling which builds stay red.  Tier E manages 0.555 at 0h and 0.618 at 6h.
+- Builds with no completed stream history make up 18% of failures.  Tier E
+  scores 0.667 on them.
+
+This analysis is post hoc.  Folds 7–10 had already been scored once for the
+Tier E headline.
+
+Sources: `reports/phase1_v2_new_breakage.csv` (per fold, model and stratum,
+with CIs), `reports/phase1_v2_new_breakage_vs_c.csv` (paired deltas),
+`scripts/analyze_phase1_new_breakage.py`.
+
 #### Previous baseline: walk-forward (folds 6–10, 0h finish buffer, Tier C RF)
 
 | Fold | Repos | Macro within-repo AUC | Recall@15% |
