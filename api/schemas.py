@@ -225,7 +225,9 @@ class RootCauseSummaryOut(BaseModel):
 class DashboardSummaryOut(BaseModel):
     total_builds_analyzed: int
     pipelines_monitored: int
+    # Failure rate over builds with a reported outcome (builds_with_outcome of them).
     overall_failure_rate: float
+    builds_with_outcome: int = 0
     anomalies_detected: int
     top_root_causes: list[RootCauseSummaryOut]
 

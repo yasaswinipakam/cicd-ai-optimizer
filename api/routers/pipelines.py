@@ -157,7 +157,8 @@ def create_build(
     prediction_data = analysis["prediction"]
     anomaly_data = analysis["anomaly"]
     root_cause = analysis.get("root_cause") or {}
-    observed_status = payload.build_status or prediction_data["predicted_status"]
+    # Without a reported status the outcome is unknown; never store the prediction as if observed.
+    observed_status = payload.build_status or "unknown"
     build_log = BuildLog(
         pipeline_id=pipeline.id,
         timestamp=now,
@@ -397,7 +398,8 @@ def list_builds(
                     is_anomaly=log.predictions[0].is_anomaly,
                     anomaly_score=log.predictions[0].anomaly_score,
                 )
-                if log.predictions and log.build_status == "failed"
+                # Without a failed-test log there is no root cause, and the suggestion would be generic filler.
+                if log.predictions and log.build_status == "failed" and log.predictions[0].root_cause_label
                 else None
             ),
             "explanation": log.raw_features.get("_explanation") if log.raw_features else None,
@@ -555,7 +557,7 @@ def download_build_report(
     top_terms = (prediction.root_cause_label or "").split(",") if prediction.root_cause_label else []
     suggestion = (
         get_suggestion(top_terms, is_anomaly=prediction.is_anomaly, anomaly_score=prediction.anomaly_score)
-        if build_log.build_status == "failed" else None
+        if build_log.build_status == "failed" and top_terms else None
     )
     build_data = {
         "pipeline_id": pipeline.name,
@@ -593,7 +595,8 @@ def dashboard_summary(
     logs = db.query(BuildLog).options(joinedload(BuildLog.predictions)).all()
     predictions = [prediction for log in logs for prediction in log.predictions]
     total = len(logs)
-    failure_rate = sum(log.build_status == "failed" for log in logs) / total if total else 0.0
+    outcomes = [failed for log in logs if (failed := _observed_outcome(log)[1]) is not None]
+    failure_rate = sum(outcomes) / len(outcomes) if outcomes else 0.0
     anomaly_count = sum(prediction.is_anomaly for prediction in predictions)
     grouped: dict[tuple[int, str | None], int] = {}
     for prediction in predictions:
@@ -605,6 +608,7 @@ def dashboard_summary(
         "total_builds_analyzed": total,
         "pipelines_monitored": db.query(Pipeline).count(),
         "overall_failure_rate": failure_rate,
+        "builds_with_outcome": len(outcomes),
         "anomalies_detected": anomaly_count,
         "top_root_causes": [
             {"cluster_id": cluster_id, "label": label, "count": count}
@@ -619,21 +623,22 @@ def failure_trends(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> list[dict]:
-    """Return daily build totals and failure rates for the requested lookback."""
+    """Return daily failure rates over builds with a reported outcome."""
     since = datetime.now(timezone.utc) - timedelta(days=days)
     logs = db.query(BuildLog).filter(BuildLog.timestamp >= since).order_by(BuildLog.timestamp).all()
-    grouped: dict[str, list[BuildLog]] = {}
+    grouped: dict[str, list[bool]] = {}
     for log in logs:
-        date_key = log.timestamp.date().isoformat()
-        grouped.setdefault(date_key, []).append(log)
+        failed = _observed_outcome(log)[1]
+        if failed is not None:
+            grouped.setdefault(log.timestamp.date().isoformat(), []).append(failed)
     return [
         {
             "date": date_key,
-            "total_builds": len(day_logs),
-            "failed_builds": sum(log.build_status == "failed" for log in day_logs),
-            "failure_rate": sum(log.build_status == "failed" for log in day_logs) / len(day_logs),
+            "total_builds": len(outcomes),
+            "failed_builds": sum(outcomes),
+            "failure_rate": sum(outcomes) / len(outcomes),
         }
-        for date_key, day_logs in grouped.items()
+        for date_key, outcomes in grouped.items()
     ]
 
 

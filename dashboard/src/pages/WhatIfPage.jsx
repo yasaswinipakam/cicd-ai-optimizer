@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import client from '../api/client'
+import { featureLabel } from '../components/featureLabels'
 import { LiveDot, PageHeader, ScrambleText } from '../components/ui'
-import { axisProps, chartColors, tooltipProps } from '../theme/chart'
+
+// The languages the deployed model was trained on; any other value would be scored as unknown.
+const LANGUAGES = ['go', 'java', 'python', 'ruby']
 
 const initialControls = {
   srcChurn: 50,
-  testChurn: 10,
   filesAdded: 1,
   filesDeleted: 1,
   filesModified: 4,
@@ -17,7 +18,6 @@ const initialControls = {
 
 const interventionOptions = {
   git_diff_src_churn: { label: 'Source-code churn', control: 'srcChurn', max: 2000 },
-  git_diff_test_churn: { label: 'Test-code churn', control: 'testChurn', max: 2000 },
   gh_diff_files_added: { label: 'Files added', control: 'filesAdded', max: 500 },
   gh_diff_files_deleted: { label: 'Files deleted', control: 'filesDeleted', max: 500 },
   gh_diff_files_modified: { label: 'Files modified', control: 'filesModified', max: 500 },
@@ -41,13 +41,11 @@ function buildFeatures(controls) {
   return {
     ...typicalHistory(controls.previousFailed),
     git_diff_src_churn: Number(controls.srcChurn),
-    git_diff_test_churn: Number(controls.testChurn),
     gh_diff_files_added: Number(controls.filesAdded),
     gh_diff_files_deleted: Number(controls.filesDeleted),
     gh_diff_files_modified: Number(controls.filesModified),
     gh_lang: controls.language,
     gh_is_pr: controls.isPr,
-    git_prev_commit_resolution_status: controls.previousFailed ? 'failed' : 'passed',
   }
 }
 
@@ -69,11 +67,11 @@ function ExplanationList({ explanation }) {
 
   return (
     <div className="mt-5 border-t border-line pt-4">
-      <h3 className="label font-sans">Why the baseline risk looks this way</h3>
+      <h3 className="label font-sans">Why the risk looks this way</h3>
       <ul className="mt-3 space-y-2 text-sm">
         {explanation.slice(0, 5).map(item => (
           <li key={item.feature} className="flex justify-between gap-3">
-            <span className="font-mono text-ink">{item.feature}</span>
+            <span className="text-ink">{featureLabel(item.feature)}</span>
             <span className={item.direction === 'increases_failure_risk' ? 'text-danger' : 'text-info'}>
               {item.direction === 'increases_failure_risk' ? 'increases risk' : 'decreases risk'}
             </span>
@@ -120,7 +118,6 @@ function SimulationResult({ result }) {
           {' '}from <span className="stat">{Number(result.intervention?.original_value || 0)}</span>
           {' '}to <span className="stat">{Number(result.intervention?.simulated_value || 0)}</span>.
         </p>
-        <p className="mt-1">Total files changed: <span className="stat">{Number(result.simulated?.derived_features?.total_files_changed || 0)}</span></p>
       </div>
       <p className="mt-4 text-xs text-ink-faint">{result.disclaimer}</p>
     </section>
@@ -130,7 +127,6 @@ function SimulationResult({ result }) {
 export default function WhatIfPage() {
   const [controls, setControls] = useState(initialControls)
   const [result, setResult] = useState(null)
-  const [history, setHistory] = useState([])
   const [error, setError] = useState('')
   const [interventionField, setInterventionField] = useState('gh_diff_files_modified')
   const [interventionValue, setInterventionValue] = useState(initialControls.filesModified)
@@ -144,12 +140,8 @@ export default function WhatIfPage() {
   useEffect(() => {
     const timer = setTimeout(async () => {
       try {
-        const { data } = await client.post('/predict/whatif', { build_features: features })
+        const { data } = await client.post('/predict/whatif?explain=true', { build_features: features })
         setResult(data)
-        setHistory(previous => [...previous, {
-          change: previous.length + 1,
-          probability: +(data.failure_probability * 100).toFixed(1),
-        }].slice(-20))
         setError('')
       } catch {
         setError('Unable to calculate the hypothetical prediction.')
@@ -186,7 +178,7 @@ export default function WhatIfPage() {
           field: interventionField,
           value: Number(interventionValue),
         },
-        include_explanation: true,
+        include_explanation: false,
       })
       setSimulation(data)
     } catch (requestError) {
@@ -208,10 +200,6 @@ export default function WhatIfPage() {
               Source churn <span className="stat text-sm">{controls.srcChurn}</span>
               <input className="mt-2 w-full" type="range" min="0" max="2000" name="srcChurn" value={controls.srcChurn} onChange={update} />
             </label>
-            <label className="label flex flex-wrap justify-between gap-x-2">
-              Test churn <span className="stat text-sm">{controls.testChurn}</span>
-              <input className="mt-2 w-full" type="range" min="0" max="2000" name="testChurn" value={controls.testChurn} onChange={update} />
-            </label>
             <div className="grid grid-cols-3 items-end gap-3">
               {[
                 ['filesAdded', 'Files added'],
@@ -227,7 +215,7 @@ export default function WhatIfPage() {
             <label className="label block">
               Language
               <select className="field" name="language" value={controls.language} onChange={update}>
-                {['ruby', 'java', 'python', 'javascript', 'go'].map(language => <option key={language}>{language}</option>)}
+                {LANGUAGES.map(language => <option key={language}>{language}</option>)}
               </select>
             </label>
             <label className="flex items-center gap-2.5 text-sm text-ink"><input type="checkbox" name="isPr" checked={controls.isPr} onChange={update} className="size-4" /> Pull request build</label>
@@ -239,14 +227,8 @@ export default function WhatIfPage() {
         <section className="card tick p-5 sm:p-6">
           <p className="label flex items-center gap-2"><LiveDot />Live baseline failure probability</p>
           <div className="mt-3"><RiskBadge probability={result?.failure_probability} /></div>
-          {result?.is_anomaly && <span className="chip chip-accent-2 mt-4 whitespace-normal">Unusual pre-build input profile — not a failure prediction</span>}
           {error && <p className="mt-3 text-sm text-danger" role="alert">{error}</p>}
-          <div className="mt-5 h-44">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={history} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}><CartesianGrid stroke={chartColors.grid} vertical={false} /><XAxis dataKey="change" {...axisProps} /><YAxis domain={[0, 100]} {...axisProps} axisLine={false} /><Tooltip {...tooltipProps} /><Line dataKey="probability" stroke={chartColors.accent2} strokeWidth={2} dot={false} /></LineChart>
-            </ResponsiveContainer>
-          </div>
-          <ExplanationList explanation={simulation?.baseline?.explanation} />
+          <ExplanationList explanation={result?.explanation} />
         </section>
       </div>
 

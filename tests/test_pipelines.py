@@ -175,3 +175,17 @@ def test_shadow_prediction_records_later_actual_outcome_without_blocking(client:
         headers=headers,
         json={"build_status": "passed"},
     ).status_code == 409
+
+
+def test_builds_without_a_reported_outcome_never_count_as_failures(client: TestClient) -> None:
+    headers = _auth_headers(client)
+    # The stub predicts "failed"; with no reported status the outcome is unknown.
+    unknown = client.post("/pipelines/rate-repo/builds", headers=headers, json={"gh_lang": "ruby"})
+    client.post("/pipelines/rate-repo/builds", headers=headers,
+                json={"build_features": {"gh_lang": "ruby"}, "build_status": "passed"})
+    history = client.get("/pipelines/rate-repo/builds", headers=headers).json()
+    assert {build["id"]: build["build_status"] for build in history}[unknown.json()["build_log_id"]] == "unknown"
+    summary = client.get("/dashboard/summary", headers=headers).json()
+    assert summary["builds_with_outcome"] == 1 and summary["overall_failure_rate"] == 0.0
+    trend = client.get("/dashboard/failure-trends", headers=headers).json()
+    assert [(day["total_builds"], day["failed_builds"]) for day in trend] == [(1, 0)]

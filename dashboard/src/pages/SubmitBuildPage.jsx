@@ -3,6 +3,9 @@ import client from '../api/client'
 import StatusBadge from '../components/StatusBadge'
 import { PageHeader, ScrambleText } from '../components/ui'
 
+// The languages the deployed model was trained on; any other value would be scored as unknown.
+const LANGUAGES = ['go', 'java', 'python', 'ruby']
+
 const initialForm = {
   pipeline: 'demo-repo',
   src: 50,
@@ -53,7 +56,7 @@ export default function SubmitBuildPage() {
     event.preventDefault()
     setError('')
     try {
-      const { data } = await client.post(`/pipelines/${encodeURIComponent(form.pipeline)}/builds`, {
+      const { data } = await client.post(`/pipelines/${encodeURIComponent(form.pipeline)}/builds?explain=true`, {
         build_features: {
           git_diff_src_churn: Number(form.src),
           gh_diff_files_added: Number(form.filesAdded),
@@ -86,8 +89,7 @@ export default function SubmitBuildPage() {
             <label className="label">Deleted<input name="filesDeleted" type="number" min="0" value={form.filesDeleted} onChange={change} className="field" /></label>
             <label className="label">Modified<input name="filesModified" type="number" min="0" value={form.filesModified} onChange={change} className="field" /></label>
           </fieldset>
-          <p className="-mt-3 text-xs text-ink-faint">Total files changed is derived from added + deleted + modified.</p>
-          <label className="label">Language<select name="language" value={form.language} onChange={change} className="field"><option>ruby</option><option>python</option><option>java</option><option>javascript</option></select></label>
+          <label className="label">Language<select name="language" value={form.language} onChange={change} className="field">{LANGUAGES.map(language => <option key={language}>{language}</option>)}</select></label>
           <label className="label">Branch<input name="branch" value={form.branch} onChange={change} className="field" /></label>
           <label className="flex items-center gap-2.5 text-sm text-ink"><input name="isPr" type="checkbox" checked={form.isPr} onChange={change} className="size-4" />Pull request build</label>
           {form.isPr && <label className="label">PR number<input name="prNumber" type="number" min="1" value={form.prNumber} onChange={change} className="field" /></label>}
@@ -97,7 +99,7 @@ export default function SubmitBuildPage() {
         </form>
         <div>
           {error && <p className="rounded-control border border-danger/30 bg-danger/10 p-4 text-danger" role="alert">{error}</p>}
-          {result && <section className="card tick animate-rise p-5 sm:p-6" aria-live="polite"><h2 className="text-xl text-ink"><ScrambleText text="Prediction result" /></h2><div className="mt-4 grid grid-cols-2 gap-3"><div className="inset-panel p-4"><p className="label">Predicted</p><p className="mt-2"><StatusBadge status={result.predicted_status} /></p></div><div className="inset-panel p-4"><p className="label">Failure probability</p><p className="readout mt-1 text-2xl">{(result.failure_probability * 100).toFixed(1)}%</p></div></div><dl className="mt-4 space-y-3 text-sm"><div><dt className="label">Input-profile anomaly</dt><dd className="mt-1 text-ink">{result.is_anomaly ? 'Unusual pre-build profile (not a failure prediction)' : 'No unusual profile detected'}</dd></div><div><dt className="label">Root cause</dt><dd className="mt-1 text-ink">{result.root_cause_label || (result.predicted_status === 'failed' ? 'No failed-test log available for root-cause analysis.' : '—')}</dd></div></dl><HistoryContext context={result.stream_context} /></section>}
+          {result && <section className="card tick animate-rise p-5 sm:p-6" aria-live="polite"><h2 className="text-xl text-ink"><ScrambleText text="Prediction result" /></h2><div className="mt-4 grid grid-cols-2 gap-3"><div className="inset-panel p-4"><p className="label">Predicted</p><p className="mt-2"><StatusBadge status={result.predicted_status} /></p></div><div className="inset-panel p-4"><p className="label">Failure probability</p><p className="readout mt-1 text-2xl">{(result.failure_probability * 100).toFixed(1)}%</p></div></div><HistoryContext context={result.stream_context} /></section>}
           {!result && !error && <div className="hidden rounded-card border border-dashed border-line-strong p-6 text-sm text-ink-muted lg:block">Run an analysis to see the predicted status and failure probability here.</div>}
         </div>
       </div>

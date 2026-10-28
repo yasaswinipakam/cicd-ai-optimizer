@@ -16,6 +16,9 @@ from api.routers.pipelines import get_predictor
 class StubPredictor:
     def predict_failure(self, _features): return {"failure_probability": 0.42}
     def detect_anomaly(self, _features): return {"is_anomaly": False}
+    def full_analysis(self, _features, include_explanation=False):
+        return {"explanation": [{"feature": "git_diff_src_churn", "value": 2000.0, "shap_value": 0.3,
+                                 "direction": "increases_failure_risk"}] if include_explanation else []}
 
 
 @pytest.fixture
@@ -40,3 +43,13 @@ def test_what_if_prediction_never_creates_build_records(client):
     assert response.status_code == 200
     assert 0 <= response.json()["failure_probability"] <= 1
     assert factory().query(BuildLog).count() == before
+
+
+def test_what_if_explanation_is_opt_in(client):
+    test_client, _factory = client
+    token = test_client.post("/auth/login", data={"username": "whatif", "password": "password"}).json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    plain = test_client.post("/predict/whatif", headers=headers, json={"git_diff_src_churn": 2000}).json()
+    explained = test_client.post("/predict/whatif?explain=true", headers=headers, json={"git_diff_src_churn": 2000}).json()
+    assert "explanation" not in plain
+    assert explained["explanation"][0]["feature"] == "git_diff_src_churn"

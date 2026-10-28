@@ -35,28 +35,19 @@ const OUTCOME_CHIP = { failed: 'chip-danger', passed: 'chip-success' }
 const pct = x => `${Math.round(x * 100)}%`
 
 function FinancePilotSection() {
-  const [open, setOpen] = useState(true)
   const budget = [
     ['Changes flagged', RISK_BOARD.budget_15pct],
     ['Actually failed', RISK_BOARD.failures_in_budget],
     ['Precision', pct(RISK_BOARD.precision_in_budget)],
     ['Base rate', pct(RISK_BOARD.prevalence)],
-    ['Lift', `${RISK_BOARD.lift_at_15.toFixed(2)}×`],
-    ['Max possible lift', `${RISK_BOARD.max_possible_lift.toFixed(2)}×`],
   ]
   return (
     <section className="mt-10">
-      <div className="mb-4 flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <h2 className="text-2xl text-ink"><ScrambleText text="Finance software pilot" /></h2>
-          <p className="mt-1 text-sm text-ink-muted">External-validity test on 4 open-source finance repositories. Only Apache Fineract met eligibility thresholds.</p>
-        </div>
-        <button onClick={() => setOpen(o => !o)} className="btn btn-ghost btn-sm mt-1 shrink-0 whitespace-nowrap">
-          {open ? 'Collapse ↑' : 'Expand ↓'}
-        </button>
+      <div className="mb-4">
+        <h2 className="text-2xl text-ink"><ScrambleText text="Finance software pilot" /></h2>
+        <p className="mt-1 text-sm text-ink-muted">External-validity test on 4 open-source finance repositories. Only Apache Fineract met eligibility thresholds.</p>
       </div>
 
-      {open && <>
         {/* Summary cards */}
         <div className="stagger grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
           <Card label="Eligible repos" value="1 of 4" />
@@ -142,18 +133,37 @@ function FinancePilotSection() {
                   <div key={label} className="flex justify-between gap-3"><dt className="text-ink-muted">{label}</dt><dd className="readout">{value}</dd></div>
                 ))}
               </dl>
-              <p className="mt-3 text-xs text-ink-muted">{pct(RISK_BOARD.precision_in_budget)} of flagged changes failed against a {pct(RISK_BOARD.prevalence)} base rate (lift {RISK_BOARD.lift_at_15.toFixed(2)}×, 95% CI {RISK_BOARD.lift_ci[0].toFixed(2)}–{RISK_BOARD.lift_ci[1].toFixed(2)}): weak, not yet reliable.</p>
+              <p className="mt-3 text-xs text-ink-muted">Weak: not yet reliable enough to act on.</p>
             </div>
           </div>
         </Panel>
-      </>}
     </section>
   )
+}
+
+// Runtime telemetry arrives from GitHub Actions webhooks after jobs run; it is not used for prediction.
+function RuntimeSection({ operational }) {
+  return <section className="mt-10">
+    <div className="mb-4"><h2 className="text-2xl text-ink"><ScrambleText text="Runtime bottlenecks and failure diagnostics" /></h2><p className="mt-1 text-sm text-ink-muted">From GitHub Actions webhooks, after jobs run; not used for prediction.</p></div>
+    <div className="stagger grid gap-4 sm:grid-cols-3"><Card label="Jobs observed" value={operational.total_jobs_observed} /><Card label="Bottlenecks / stalled" value={`${operational.bottlenecks_detected} / ${operational.stalled_jobs_detected}`} /><Card label="Failed jobs with logs" value={operational.failed_jobs_with_captured_logs} /></div>
+    <div className="stagger mt-4 grid gap-4 lg:grid-cols-2">
+      <Panel title="Slowest or recurrent bottlenecked jobs"><RankedList items={operational.top_slowest_or_bottlenecked_jobs} empty="No bottlenecked jobs." render={job => <li key={job.job_name} className="flex flex-col gap-0.5 py-3 sm:flex-row sm:items-baseline sm:justify-between sm:gap-3"><span className="min-w-0 font-mono text-sm break-words">{job.job_name}</span><span className="shrink-0 font-mono text-xs whitespace-nowrap text-ink-muted sm:text-right">{job.bottleneck_or_stall_count} flagged · {job.average_duration_seconds == null ? '—' : `${Math.round(job.average_duration_seconds)}s avg`}</span></li>} /></Panel>
+      <Panel title="Top structured failure categories"><RankedList items={operational.top_failure_categories} empty="No captured failed-job logs." render={category => <li key={category.category} className="flex justify-between gap-3 py-3"><span>{category.title}</span><span className="stat">{category.count}</span></li>} /></Panel>
+    </div>
+  </section>
 }
 
 export default function DashboardHome() {
   const [summary, setSummary] = useState(null); const [trends, setTrends] = useState([]); const [operational, setOperational] = useState(null); const [error, setError] = useState('')
   useEffect(() => { Promise.all([client.get('/dashboard/summary'), client.get('/dashboard/failure-trends?days=30'), client.get('/dashboard/operational-summary')]).then(([s, t, o]) => { setSummary(s.data); setTrends(t.data.map(x => ({ ...x, rate: +(x.failure_rate * 100).toFixed(1) }))); setOperational(o.data) }).catch(() => setError('Unable to load dashboard data. Please sign in again.')) }, [])
-  if (error) return <p className="rounded-control border border-danger/30 bg-danger/10 p-4 text-danger" role="alert">{error}</p>; if (!summary) return <Loading>Loading dashboard…</Loading>
-  return <><PageHeader title="Dashboard">Build health and failure risk across monitored pipelines.</PageHeader><section className="stagger grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4"><Card label="Builds analyzed" value={summary.total_builds_analyzed} /><Card label="Failure rate" value={`${(summary.overall_failure_rate * 100).toFixed(1)}%`} /><Card label="Anomalies detected" value={summary.anomalies_detected} /><Card label="Pipelines monitored" value={summary.pipelines_monitored} /></section><Panel className="mt-6 animate-rise [animation-delay:240ms]" title="Failure rate trend">{trends.length ? <div className="h-72"><ResponsiveContainer><AreaChart data={trends} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}><defs><linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={chartColors.accent} stopOpacity={0.18} /><stop offset="100%" stopColor={chartColors.accent} stopOpacity={0} /></linearGradient></defs><CartesianGrid stroke={chartColors.grid} vertical={false} /><XAxis dataKey="date" {...axisProps} minTickGap={24} /><YAxis unit="%" {...axisProps} axisLine={false} /><Tooltip {...tooltipProps} /><Area type="monotone" animationDuration={1400} animationEasing="ease-out" dataKey="rate" name="Failure rate" stroke={chartColors.accent} strokeWidth={2} fill="url(#trendFill)" activeDot={{ r: 4, fill: chartColors.accent, stroke: 'var(--color-canvas)', strokeWidth: 2 }} /></AreaChart></ResponsiveContainer></div> : <p className="text-sm text-ink-muted">No builds in the last 30 days.</p>}</Panel><section className="mt-10"><div className="mb-4"><h2 className="text-2xl text-ink"><ScrambleText text="Runtime bottlenecks and failure diagnostics" /></h2><p className="mt-1 text-sm text-ink-muted">Post-execution telemetry; it is not used for pre-build risk prediction.</p></div>{operational && <><div className="stagger grid gap-4 sm:grid-cols-3"><Card label="Jobs observed" value={operational.total_jobs_observed} /><Card label="Bottlenecks / stalled" value={`${operational.bottlenecks_detected} / ${operational.stalled_jobs_detected}`} /><Card label="Failed jobs with logs" value={operational.failed_jobs_with_captured_logs} /></div><div className="stagger mt-4 grid gap-4 lg:grid-cols-2"><Panel title="Slowest or recurrent bottlenecked jobs"><RankedList items={operational.top_slowest_or_bottlenecked_jobs} empty="No job telemetry yet." render={job => <li key={job.job_name} className="flex flex-col gap-0.5 py-3 sm:flex-row sm:items-baseline sm:justify-between sm:gap-3"><span className="min-w-0 font-mono text-sm break-words">{job.job_name}</span><span className="shrink-0 font-mono text-xs whitespace-nowrap text-ink-muted sm:text-right">{job.bottleneck_or_stall_count} flagged · {job.average_duration_seconds == null ? '—' : `${Math.round(job.average_duration_seconds)}s avg`}</span></li>} /></Panel><Panel title="Top structured failure categories"><RankedList items={operational.top_failure_categories} empty="No captured failed-job logs yet." render={category => <li key={category.category} className="flex justify-between gap-3 py-3"><span>{category.title}</span><span className="stat">{category.count}</span></li>} /></Panel></div></>}</section><Panel className="mt-6" title="Top root causes"><RankedList items={summary.top_root_causes} empty="No root-cause data yet." render={c => <li key={`${c.cluster_id}-${c.label}`} className="flex justify-between gap-3 py-3"><span>{c.label || `Cluster ${c.cluster_id}`}</span><span className="stat">{c.count}</span></li>} /></Panel><FinancePilotSection /></>
+  if (error) return <p className="rounded-control border border-danger/30 bg-danger/10 p-4 text-danger" role="alert">{error}</p>
+  if (!summary) return <Loading>Loading dashboard…</Loading>
+  return <>
+    <PageHeader title="Dashboard">Build health and failure risk across monitored pipelines.</PageHeader>
+    <section className="stagger grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3"><Card label="Builds analyzed" value={summary.total_builds_analyzed} /><Card label="Failure rate" value={summary.builds_with_outcome ? `${(summary.overall_failure_rate * 100).toFixed(1)}%` : '—'} note={`${summary.builds_with_outcome} builds with a reported outcome`} /><Card label="Pipelines monitored" value={summary.pipelines_monitored} /></section>
+    <Panel className="mt-6 animate-rise [animation-delay:240ms]" title="Failure rate trend">{trends.length ? <div className="h-72"><ResponsiveContainer><AreaChart data={trends} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}><defs><linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={chartColors.accent} stopOpacity={0.18} /><stop offset="100%" stopColor={chartColors.accent} stopOpacity={0} /></linearGradient></defs><CartesianGrid stroke={chartColors.grid} vertical={false} /><XAxis dataKey="date" {...axisProps} minTickGap={24} /><YAxis unit="%" {...axisProps} axisLine={false} /><Tooltip {...tooltipProps} /><Area type="monotone" animationDuration={1400} animationEasing="ease-out" dataKey="rate" name="Failure rate" stroke={chartColors.accent} strokeWidth={2} fill="url(#trendFill)" activeDot={{ r: 4, fill: chartColors.accent, stroke: 'var(--color-canvas)', strokeWidth: 2 }} /></AreaChart></ResponsiveContainer></div> : <p className="text-sm text-ink-muted">No builds with a reported outcome in the last 30 days.</p>}</Panel>
+    {summary.top_root_causes.length > 0 && <Panel className="mt-6" title="Top root causes" subtitle="From failed-test logs attached to failed builds."><RankedList items={summary.top_root_causes} empty="" render={c => <li key={`${c.cluster_id}-${c.label}`} className="flex justify-between gap-3 py-3"><span>{c.label || `Cluster ${c.cluster_id}`}</span><span className="stat">{c.count}</span></li>} /></Panel>}
+    {operational?.total_jobs_observed > 0 && <RuntimeSection operational={operational} />}
+    <FinancePilotSection />
+  </>
 }

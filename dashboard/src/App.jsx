@@ -37,12 +37,6 @@ function ProtectedLayout() {
       <Route path="/what-if" element={<WhatIfPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes></main>
-    <footer className="border-t border-line">
-      <div className="mx-auto flex max-w-6xl flex-wrap justify-between gap-2 px-4 py-5 text-xs text-ink-faint sm:px-6">
-        <span>CI/CD Optimizer · build-failure prediction</span>
-        <span>Signed in as {user?.username}</span>
-      </div>
-    </footer>
   </div>
 }
 
