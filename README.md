@@ -219,6 +219,35 @@ network controls. Webhook endpoints still require their shared secrets.
 `init_db` also migrates databases created by earlier versions: it removes the old
 accounts table and pipeline owners, and keeps every pipeline and build.
 
+## Public demo
+
+The demo is a single read-only container (`docker/Dockerfile.demo`). It serves
+the dashboard at `/` and the API under `/api`.
+
+**What's in it.**
+- 450 real GitHub Actions runs from `twbs/bootstrap`,
+  `freeCodeCamp/freeCodeCamp` and `yt-dlp/yt-dlp`, taken from the deployed
+  model's holdout window, so the model never trained on them.
+- At build time they are replayed through the real webhook: each run is scored
+  when requested and gets its outcome when it completes.
+- PR authors and feature-branch names are pseudonymised.
+
+**What visitors can do.** In read-only mode (`DEMO_READ_ONLY=1`):
+- the What-if page works;
+- Submit scores a build against the stored history but saves nothing;
+- every other write returns 403.
+
+**Rebuilding the seed data.** Run `scripts/build_demo_seed.py` (needs the
+confirmation dataset).
+
+**Deploying on Render.**
+1. Model artifacts aren't in git. Publish them as the `demo-model-v1` GitHub
+   release; the Dockerfile downloads them and checks their SHA-256.
+2. In Render, choose **New → Blueprint**, point it at this repository, and
+   apply `render.yaml`.
+
+The free plan sleeps when idle, so the first visit can take about a minute.
+
 ## Run with Docker
 
 Copy the environment template and replace every placeholder with a real secret:

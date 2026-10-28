@@ -12,7 +12,6 @@ import argparse
 import json
 import platform
 import sys
-import time
 from pathlib import Path
 
 import numpy as np
@@ -55,7 +54,7 @@ def top_metrics(y: np.ndarray, p: np.ndarray, budget: float) -> tuple[float, flo
 
 
 def ece(y: np.ndarray, p: np.ndarray, bins: int = 10) -> float:
-    edges = np.linspace(0, 1, bins + 1); total = len(y); value = 0.0
+    edges = np.linspace(0, 1, bins + 1); value = 0.0
     for lo, hi in zip(edges[:-1], edges[1:]):
         mask = (p >= lo) & ((p < hi) if hi < 1 else (p <= hi))
         if mask.any(): value += mask.mean() * abs(float(y[mask].mean()) - float(p[mask].mean()))

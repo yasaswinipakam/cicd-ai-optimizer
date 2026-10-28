@@ -1,7 +1,6 @@
 """Tests for artifact-backed, sparse-payload CI/CD inference."""
 
 import joblib
-import numpy as np
 import pandas as pd
 from sklearn.dummy import DummyClassifier
 from sklearn.impute import SimpleImputer

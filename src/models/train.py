@@ -27,7 +27,7 @@ from lightgbm import LGBMClassifier
 
 from src.features.availability_guard import assert_features_available_for_prediction
 from src.features.engineer import HISTORY_AUX_COLS, add_rolling_history, engineer_features, training_failure_prior
-from src.features.schema import FEATURE_COLS, FEATURE_SOURCE_COLUMNS, HISTORY_FEATURE_COLS
+from src.features.schema import FEATURE_COLS, FEATURE_SOURCE_COLUMNS
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -522,7 +522,7 @@ def _fit_stacking_models(data_path: Path) -> dict[str, object]:
     print(f"  Stacking: trained in {elapsed:.1f}s")
 
     proba = stack.predict_proba(x_test)[:, 1]
-    from sklearn.metrics import roc_auc_score, f1_score
+    from sklearn.metrics import roc_auc_score
     test_auc = roc_auc_score(y_test, proba)
     test_f1 = f1_score(y_test, (proba >= 0.5).astype(int))
     print(f"  Stacking test F1={test_f1:.4f}, AUC={test_auc:.4f}")

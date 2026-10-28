@@ -1,0 +1,14 @@
+# Render Blueprint for the public, read-only demo (docker/Dockerfile.demo).
+# One web service serves the dashboard at / and the API under /api.
+services:
+  - type: web
+    name: cicd-ai-optimizer
+    runtime: docker
+    dockerfilePath: ./docker/Dockerfile.demo
+    dockerContext: .
+    plan: free
+    branch: main
+    healthCheckPath: /api/status
+    envVars:
+      - key: DEMO_READ_ONLY
+        value: "1"

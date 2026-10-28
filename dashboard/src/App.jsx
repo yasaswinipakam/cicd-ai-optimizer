@@ -1,10 +1,22 @@
+import { useEffect, useState } from 'react'
 import { BrowserRouter, Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom'
+import client from './api/client'
 import DashboardHome from './pages/DashboardHome'
 import PipelinesPage from './pages/PipelinesPage'
 import PipelineDetailPage from './pages/PipelineDetailPage'
 import SubmitBuildPage from './pages/SubmitBuildPage'
 import WhatIfPage from './pages/WhatIfPage'
 import { Brand } from './components/ui'
+
+// Shown when the API runs as the public, read-only demo.
+function DemoBanner() {
+  const [readOnly, setReadOnly] = useState(false)
+  useEffect(() => { client.get('/status').then(r => setReadOnly(r.data.read_only)).catch(() => {}) }, [])
+  if (!readOnly) return null
+  return <p className="border-b border-line bg-accent/10 px-4 py-2 text-center text-xs text-ink-muted">
+    Read-only demo: real GitHub Actions runs from three public repositories, replayed through a model that never trained on them. Builds you submit are scored, not saved.
+  </p>
+}
 
 function Layout() {
   const location = useLocation()
@@ -21,6 +33,7 @@ function Layout() {
         </nav>
       </div>
     </header>
+    <DemoBanner />
     <main key={location.pathname} className="mx-auto w-full max-w-6xl flex-1 animate-rise px-4 py-8 sm:px-6 sm:py-10"><Routes>
       <Route path="/" element={<DashboardHome />} />
       <Route path="/pipelines" element={<PipelinesPage />} />
