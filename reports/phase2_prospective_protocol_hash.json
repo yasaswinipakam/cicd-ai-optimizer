@@ -1,0 +1,18 @@
+{
+  "protocol": "phase2_prospective_protocol.md",
+  "sha256": "48bfd096d0085375343103c63423b76dcb5e14f3e525ee84dfa4c775099200e6",
+  "recorded_before_collection_utc": "2026-10-28T17:19:47Z",
+  "frozen_commit": "7959104",
+  "model_artifact": {
+    "path": "artifacts/tier_e_gha_blend.joblib",
+    "sha256": "57c26f170b6dae23c92a268c672663fc5243dc049aa8135374fdf3fabcb12860"
+  },
+  "frozen_files_sha256": {
+    "reports/phase2_prospective_repositories.csv": "5f91b552febba1ffb40139d2f92e406a99b76ade0f6532c9e848fdf32219c5e8",
+    "src/models/tier_e.py": "dafdd89e86986680b4b3267373acd511b3174241c37128a392b7379f2b7113e0",
+    "src/inference/alert_policy.py": "13fff0012807017b55ed2192f18a1044f64f409b535e1fae82cbd496ae5b61bd",
+    "scripts/evaluate_gha_tier_e.py": "c80871f85b1ba3baf15975b789becd8eee4db29b226eff3692d4ccb593542152",
+    "scripts/compare_phase1_walkforward_tiers.py": "6454f9f0cc77a7f41a7749d04f419b5fa3a4026d5bbbca50519f430e5b656927",
+    "scripts/collect_gha_confirmation.py": "aaa28c14acdfee948c6765591d6173a5e88f5417ff69b8d717fc5b392eeff03e"
+  }
+}
