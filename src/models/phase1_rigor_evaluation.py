@@ -223,7 +223,7 @@ def add_stream_history(builds: pd.DataFrame) -> pd.DataFrame:
     """Tier E: stream-level history and in-flight context, finish-time safe."""
     out = builds.copy(); n = len(out)
     cols = {c: np.full(n, np.nan) for c in [*STREAM, *INFLIGHT, *JOBS]}
-    start = out.gh_build_started_at.astype("int64").to_numpy(); finish = out._finished_at.astype("int64").to_numpy()
+    start = out.gh_build_started_at.dt.as_unit("ns").astype("int64").to_numpy(); finish = out._finished_at.dt.as_unit("ns").astype("int64").to_numpy()
     build_id = out.tr_build_id.to_numpy(np.int64); label = out.target_failed.to_numpy(np.int64)
     prev = out.tr_prev_build.to_numpy(); jobs = out.job_count.to_numpy(float); keys = _stream_keys(out)
     hour_ns = 3_600_000_000_000
@@ -271,7 +271,7 @@ def _assert_stream_history(data: pd.DataFrame, repos: int = 40) -> None:
     sizes = data.gh_project_name.value_counts(); pool = sizes[(sizes >= 50) & (sizes <= 800)].index
     for repo in np.random.default_rng(SEED).choice(pool, size=min(repos, len(pool)), replace=False):
         d = data.loc[data.gh_project_name.eq(repo)]; key = np.array(_stream_keys(d))
-        finish = d._finished_at.astype("int64").to_numpy(); start = d.gh_build_started_at.astype("int64").to_numpy()
+        finish = d._finished_at.dt.as_unit("ns").astype("int64").to_numpy(); start = d.gh_build_started_at.dt.as_unit("ns").astype("int64").to_numpy()
         ids = d.tr_build_id.to_numpy(np.int64); y = d.target_failed.to_numpy()
         for r in range(len(d)):
             row = d.iloc[r]; mask = (key == key[r]) & (finish < start[r])

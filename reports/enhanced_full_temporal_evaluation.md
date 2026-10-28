@@ -4,6 +4,6 @@ The deployable Random Forest uses the expanded availability-guarded pre-build fe
 
 | Train rows | Test rows | Threshold | Precision | Recall | F1 | AUC | Alert rate | Failure capture rate |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 2,849,851 | 712,463 | 0.30 | 0.3767 | 0.8142 | 0.5151 | 0.8213 | 0.4236 | 0.8142 |
+| 2,849,851 | 712,463 | 0.30 | 0.3712 | 0.8177 | 0.5106 | 0.8208 | 0.4318 | 0.8177 |
 
 Train range: 2011-04-16 11:24:39+00:00 to 2016-03-07 14:53:32+00:00. Test range: 2016-03-07 14:53:32+00:00 to 2016-08-31 23:59:27+00:00. This result is a chronological within-dataset evaluation, not proof of cross-repository generalization.

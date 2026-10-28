@@ -1,0 +1,6 @@
+unit,finish_buffer_hours,reason,timestamp_utc
+travis_walk_6_C_repo_prior,0,walk units: travis_walk_{6|7|8|9|10}_{A|B|C|Cplus}_{majority|logistic|rf|repo_prior|historyonly},2026-10-12 23:52:25.439023+00:00
+travis_walk_7_C_repo_prior,0,walk units: travis_walk_{6|7|8|9|10}_{A|B|C|Cplus}_{majority|logistic|rf|repo_prior|historyonly},2026-10-12 23:52:25.440613+00:00
+travis_walk_8_C_repo_prior,0,walk units: travis_walk_{6|7|8|9|10}_{A|B|C|Cplus}_{majority|logistic|rf|repo_prior|historyonly},2026-10-12 23:52:25.441020+00:00
+travis_walk_9_C_repo_prior,0,walk units: travis_walk_{6|7|8|9|10}_{A|B|C|Cplus}_{majority|logistic|rf|repo_prior|historyonly},2026-10-12 23:52:25.441324+00:00
+travis_walk_10_C_repo_prior,0,walk units: travis_walk_{6|7|8|9|10}_{A|B|C|Cplus}_{majority|logistic|rf|repo_prior|historyonly},2026-10-12 23:52:25.441564+00:00

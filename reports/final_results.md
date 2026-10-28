@@ -23,7 +23,10 @@ blocked by the availability registry: `gh_num_pr_comments`,
 `gh_num_issue_comments` and `gh_num_commit_comments` are undated snapshots that
 can include comments written after the build, and `gh_num_commits_in_push` is
 entirely missing in this export.  Removing them cost nothing measurable
-(stacking AUC 0.912 → 0.911; deployed chronological AUC 0.8218 → 0.8213).
+(stacking AUC 0.912 → 0.912; deployed chronological AUC 0.8218 → 0.8208).
+
+All artifacts are trained with the pinned environment in `requirements.txt` /
+`constraints.txt` (Python 3.11, scikit-learn 1.9.1, pandas 3.1.0).
 
 Hyperparameters tuned via `RandomizedSearchCV` (n_iter=25, 3-fold CV, F1 scoring).
 Best RF: `max_depth=None, max_features=sqrt, class_weight=balanced, n_estimators=200`.
@@ -32,15 +35,15 @@ Best LGBM: `num_leaves=255, max_depth=10, lr=0.2, subsample=0.9, colsample_bytre
 
 | Model | Accuracy | Precision | Recall | F1 | AUC-ROC |
 |---|---:|---:|---:|---:|---:|
-| Stacking (RF+XGB+LGBM→LR) | 0.8972 | 0.8370 | 0.6353 | 0.7223 | **0.9108** |
-| Random Forest | 0.8942 | **0.8400** | 0.6143 | 0.7096 | 0.9069 |
-| XGBoost | 0.8920 | 0.7538 | 0.7229 | **0.7380** | 0.9013 |
+| Stacking (RF+XGB+LGBM→LR) | 0.8990 | **0.8310** | 0.6531 | **0.7314** | **0.9116** |
+| Random Forest | 0.8894 | 0.7490 | 0.7135 | 0.7309 | 0.9084 |
+| XGBoost | 0.8895 | 0.7520 | 0.7086 | 0.7297 | 0.9003 |
 | LightGBM | 0.8769 | 0.6990 | 0.7291 | 0.7138 | 0.8976 |
-| Decision Tree | 0.7691 | 0.4693 | 0.7407 | 0.5746 | 0.8247 |
+| Decision Tree | 0.7691 | 0.4693 | 0.7406 | 0.5745 | 0.8246 |
 | SVM | 0.7583 | 0.4468 | 0.6229 | 0.5204 | 0.7723 |
 
-Stacking ensemble (StackingClassifier, cv=5) has the highest AUC (0.9108).
-XGBoost leads on F1 (0.7380) at the default 0.5 threshold.  Use `--mode stack`
+Stacking ensemble (StackingClassifier, cv=5) has the highest AUC (0.9116) and
+F1 (0.7314) at the default 0.5 threshold; RF and XGBoost are within 0.002 F1.  Use `--mode stack`
 to train the stack; SHAP explanations on it use the XGB base estimator via
 TreeExplainer.  Source: `artifacts/model_results.csv`.
 
@@ -59,10 +62,10 @@ the Phase-1 protocol or cited as a valid headline AUC.
 
 | Train rows | Test rows | Threshold | Precision | Recall | F1 | AUC |
 |---:|---:|---:|---:|---:|---:|---:|
-| 2,849,851 | 712,463 | 0.30 | 0.3767 | 0.8142 | **0.5151** | **0.8213** |
+| 2,849,851 | 712,463 | 0.30 | 0.3712 | 0.8177 | **0.5106** | **0.8208** |
 
-Alert rate at this threshold: 42.4% of builds flagged; failure capture rate
-(recall) 81.4%.  The threshold was chosen to maximise recall subject to a ≤40%
+Alert rate at this threshold: 43.2% of builds flagged; failure capture rate
+(recall) 81.8%.  The threshold was chosen to maximise recall subject to a ≤40%
 alert-rate ceiling and a precision floor equal to the base failure rate.
 
 ### Phase-1 rigor study results (authoritative)

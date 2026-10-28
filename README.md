@@ -33,7 +33,7 @@ Create and activate a Python 3.11 virtual environment, then install the project 
 cd cicd-ai-optimizer
 python3.11 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements.txt -c constraints.txt
 ```
 
 Place `final-2017-01-25_csv.gz` in `data/raw/` when it is available.

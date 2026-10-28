@@ -387,9 +387,11 @@ def _tune_fast_models(data_path: Path) -> dict[str, object]:
     print(f"  Best RF CV F1:  {rf_search.best_score_:.4f}")
 
     print("Tuning XGBoost (n_iter=25, cv=3, scoring=f1) ...")
+    # Boosters run single-threaded inside the parallel search: nesting OpenMP
+    # pools inside loky workers oversubscribes cores and can deadlock.
     xgb_base = XGBClassifier(
         scale_pos_weight=scale_pos_weight, eval_metric="logloss",
-        random_state=RANDOM_STATE, n_jobs=-1, tree_method="hist",
+        random_state=RANDOM_STATE, n_jobs=1, tree_method="hist",
     )
     xgb_search = RandomizedSearchCV(
         xgb_base, _XGB_PARAM_DIST, n_iter=25, scoring="f1", cv=cv,
@@ -402,7 +404,7 @@ def _tune_fast_models(data_path: Path) -> dict[str, object]:
     print("Tuning LightGBM (n_iter=25, cv=3, scoring=f1) ...")
     lgbm_base = LGBMClassifier(
         scale_pos_weight=scale_pos_weight,
-        random_state=RANDOM_STATE, n_jobs=-1, verbose=-1,
+        random_state=RANDOM_STATE, n_jobs=1, verbose=-1,
     )
     lgbm_search = RandomizedSearchCV(
         lgbm_base, _LGBM_PARAM_DIST, n_iter=25, scoring="f1", cv=cv,
@@ -427,8 +429,8 @@ def _tune_fast_models(data_path: Path) -> dict[str, object]:
     ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
     models: dict[str, object] = {
         "random_forest": rf_search.best_estimator_,
-        "xgboost": xgb_search.best_estimator_,
-        "lightgbm": lgbm_search.best_estimator_,
+        "xgboost": xgb_search.best_estimator_.set_params(n_jobs=-1),
+        "lightgbm": lgbm_search.best_estimator_.set_params(n_jobs=-1),
         "decision_tree": dt,
         "svm": svm,
     }
@@ -510,7 +512,8 @@ def _fit_stacking_models(data_path: Path) -> dict[str, object]:
         cv=5,
         stack_method="predict_proba",
         passthrough=False,
-        n_jobs=-1,
+        # Base models already use every core; parallel folds would nest OpenMP pools.
+        n_jobs=None,
     )
     started = time.perf_counter()
     print("Fitting StackingClassifier (cv=5, 3 base models + LR meta) ...")

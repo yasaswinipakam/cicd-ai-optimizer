@@ -1,0 +1,2 @@
+fold,draws,macro_within_repo_auc_mean,macro_within_repo_auc_sd,macro_within_repo_auc_low,macro_within_repo_auc_high,contains_0_5
+8,1000,0.49950551205983595,0.007190074468890694,0.48524961351731344,0.5138440447688903,True
