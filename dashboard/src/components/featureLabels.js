@@ -41,4 +41,16 @@ const LABELS = {
   ctx_hours_since_stream_start: 'Hours since last branch/PR build',
 }
 
-export const featureLabel = feature => LABELS[feature] ?? feature
+const featureLabel = feature => LABELS[feature] ?? feature
+
+const YES_NO = /(^is_|_failed$|_pending$|^gh_is_pr$|^gh_by_core_team_member$)/
+const RATE = /(rate|ewma)/
+
+// "Label: value", with yes/no for flags and percentages for rates.
+export function featureWithValue(feature, value) {
+  if (value == null || Number.isNaN(value)) return featureLabel(feature)
+  const shown = YES_NO.test(feature) ? (value ? 'yes' : 'no')
+    : RATE.test(feature) ? `${Math.round(value * 100)}%`
+    : Number.isInteger(value) ? value.toLocaleString() : value.toFixed(1)
+  return `${featureLabel(feature)}: ${shown}`
+}

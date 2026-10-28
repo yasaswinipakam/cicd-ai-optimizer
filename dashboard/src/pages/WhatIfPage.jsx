@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import client from '../api/client'
-import { featureLabel } from '../components/featureLabels'
+import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { useModelInfo } from '../api/model'
+import { ContributionChart, RiskBar } from '../components/charts'
 import { LiveDot, PageHeader, ScrambleText } from '../components/ui'
+import { axisProps, chartColors, tooltipProps } from '../theme/chart'
 
 // The languages the deployed model was trained on; any other value would be scored as unknown.
 const LANGUAGES = ['go', 'java', 'python', 'ruby']
@@ -53,33 +56,32 @@ function percent(value) {
   return `${(Number(value || 0) * 100).toFixed(1)}%`
 }
 
-function RiskBadge({ probability }) {
-  const value = Number(probability || 0) * 100
-  const [color, bar] = value < 30 ? ['text-success', 'bg-success'] : value < 60 ? ['text-warn', 'bg-warn'] : ['text-danger', 'bg-danger']
+function RiskReadout({ probability, threshold }) {
+  const flagged = threshold != null && Number(probability || 0) >= threshold
   return <div>
-    <span className={`readout text-4xl ${color}`}>{value.toFixed(1)}%</span>
-    <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-raised"><div className={`sheen h-full rounded-full ${bar} transition-all duration-500`} style={{ width: `${Math.min(value, 100)}%` }} /></div>
+    <span className={`readout text-4xl ${flagged ? 'text-danger' : 'text-ink'}`}>{percent(probability)}</span>
+    <RiskBar probability={probability} threshold={threshold} />
   </div>
 }
 
-function ExplanationList({ explanation }) {
-  if (!explanation?.length) return null
-
-  return (
-    <div className="mt-5 border-t border-line pt-4">
-      <h3 className="label font-sans">Why the risk looks this way</h3>
-      <ul className="mt-3 space-y-2 text-sm">
-        {explanation.slice(0, 5).map(item => (
-          <li key={item.feature} className="flex justify-between gap-3">
-            <span className="text-ink">{featureLabel(item.feature)}</span>
-            <span className={item.direction === 'increases_failure_risk' ? 'text-danger' : 'text-info'}>
-              {item.direction === 'increases_failure_risk' ? 'increases risk' : 'decreases risk'}
-            </span>
-          </li>
-        ))}
-      </ul>
+// How the live risk moved as you edited the inputs (last 20 edits).
+function RiskTrail({ history, threshold }) {
+  if (history.length < 2) return <p className="mt-5 text-xs text-ink-faint">Change an input to start the risk trail.</p>
+  return <div className="mt-5">
+    <p className="label">Risk across your edits</p>
+    <div className="mt-2 h-40">
+      <ResponsiveContainer>
+        <LineChart data={history} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
+          <CartesianGrid stroke={chartColors.grid} vertical={false} />
+          <XAxis dataKey="edit" {...axisProps} />
+          <YAxis domain={[0, 100]} unit="%" {...axisProps} axisLine={false} />
+          {threshold != null && <ReferenceLine y={+(threshold * 100).toFixed(1)} stroke="var(--color-ink-muted)" strokeDasharray="4 4" label={{ value: 'alert threshold', position: 'insideTopRight', fill: 'var(--color-ink-muted)', fontSize: 10 }} />}
+          <Tooltip {...tooltipProps} labelFormatter={edit => `Edit ${edit}`} formatter={value => [`${value}%`, 'Failure risk']} />
+          <Line dataKey="probability" stroke={chartColors.accent} strokeWidth={2} dot={{ r: 3, fill: chartColors.accent, stroke: 'var(--color-surface)', strokeWidth: 2 }} activeDot={{ r: 5 }} animationDuration={600} />
+        </LineChart>
+      </ResponsiveContainer>
     </div>
-  )
+  </div>
 }
 
 function SimulationResult({ result }) {
@@ -127,6 +129,8 @@ function SimulationResult({ result }) {
 export default function WhatIfPage() {
   const [controls, setControls] = useState(initialControls)
   const [result, setResult] = useState(null)
+  const [history, setHistory] = useState([])
+  const model = useModelInfo()
   const [error, setError] = useState('')
   const [interventionField, setInterventionField] = useState('gh_diff_files_modified')
   const [interventionValue, setInterventionValue] = useState(initialControls.filesModified)
@@ -142,6 +146,10 @@ export default function WhatIfPage() {
       try {
         const { data } = await client.post('/predict/whatif?explain=true', { build_features: features })
         setResult(data)
+        setHistory(previous => [...previous, {
+          edit: (previous.at(-1)?.edit ?? 0) + 1,
+          probability: +(data.failure_probability * 100).toFixed(1),
+        }].slice(-20))
         setError('')
       } catch {
         setError('Unable to calculate the hypothetical prediction.')
@@ -226,9 +234,10 @@ export default function WhatIfPage() {
 
         <section className="card tick p-5 sm:p-6">
           <p className="label flex items-center gap-2"><LiveDot />Live baseline failure probability</p>
-          <div className="mt-3"><RiskBadge probability={result?.failure_probability} /></div>
+          <div className="mt-3"><RiskReadout probability={result?.failure_probability} threshold={model?.decision_threshold} /></div>
+          <RiskTrail history={history} threshold={model?.decision_threshold} />
           {error && <p className="mt-3 text-sm text-danger" role="alert">{error}</p>}
-          <ExplanationList explanation={result?.explanation} />
+          {result?.explanation?.length > 0 && <div className="mt-5 border-t border-line pt-4"><p className="label">Why the risk looks this way</p><p className="mt-1 text-xs text-ink-faint">Red raises the risk, blue lowers it.</p><ContributionChart explanation={result.explanation} /></div>}
         </section>
       </div>
 

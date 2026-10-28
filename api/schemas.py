@@ -214,6 +214,26 @@ class PipelineOut(BaseModel):
     status: str
     latest_build_status: str | None = None
     latest_failure_probability: float | None = None
+    recent_failure_probabilities: list[float] = Field(default_factory=list)
+
+
+class ModelInfoOut(BaseModel):
+    model_name: str
+    training_mode: str | None = None
+    decision_threshold: float
+    holdout_metrics: dict[str, float] | None = None
+
+
+class RiskBinOut(BaseModel):
+    start: float
+    end: float
+    count: int
+
+
+class RiskDistributionOut(BaseModel):
+    bins: list[RiskBinOut]
+    total: int
+    flagged: int | None = None
 
 
 class RootCauseSummaryOut(BaseModel):
@@ -258,6 +278,9 @@ class OperationalDashboardOut(BaseModel):
 
 class FailureTrendOut(BaseModel):
     date: str
+    # Builds with a reported outcome, and how many of them failed.
     total_builds: int
     failed_builds: int
-    failure_rate: float
+    failure_rate: float | None = None
+    scored_builds: int = 0
+    average_predicted_risk: float | None = None

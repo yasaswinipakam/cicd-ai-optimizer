@@ -162,4 +162,27 @@ def test_builds_without_a_reported_outcome_never_count_as_failures(client: TestC
     summary = client.get("/dashboard/summary").json()
     assert summary["builds_with_outcome"] == 1 and summary["overall_failure_rate"] == 0.0
     trend = client.get("/dashboard/failure-trends").json()
-    assert [(day["total_builds"], day["failed_builds"]) for day in trend] == [(1, 0)]
+    assert [(day["total_builds"], day["failed_builds"], day["scored_builds"]) for day in trend] == [(1, 0, 2)]
+    assert trend[0]["failure_rate"] == 0.0 and trend[0]["average_predicted_risk"] == pytest.approx(0.73)
+
+
+def test_chart_endpoints_report_model_distribution_and_recent_risk(client: TestClient) -> None:
+    for _ in range(3):
+        client.post("/pipelines/chart-repo/builds", json={"gh_lang": "ruby"})
+    pipeline = next(p for p in client.get("/pipelines").json() if p["name"] == "chart-repo")
+    assert pipeline["recent_failure_probabilities"] == [0.73, 0.73, 0.73]
+    distribution = client.get("/dashboard/risk-distribution?threshold=0.75").json()
+    assert len(distribution["bins"]) == 10 and distribution["bins"][7] == {"start": 0.7, "end": 0.8, "count": 3}
+    assert distribution["total"] == 3 and distribution["flagged"] == 0
+    assert client.get("/dashboard/risk-distribution").json()["flagged"] is None
+    model = client.get("/model").json()
+    assert model == {"model_name": "xgboost", "training_mode": "full", "decision_threshold": 0.4, "holdout_metrics": None}
+
+
+def test_build_granularity_trend_gives_one_point_per_scored_build(client: TestClient) -> None:
+    client.post("/pipelines/trend-repo/builds", json={"build_features": {"gh_lang": "ruby"}, "build_status": "failed"})
+    client.post("/pipelines/trend-repo/builds", json={"gh_lang": "ruby"})
+    client.post("/pipelines/trend-repo/builds", json={"build_features": {"gh_lang": "ruby"}, "build_status": "passed"})
+    points = client.get("/dashboard/failure-trends?granularity=build").json()
+    assert [(p["total_builds"], p["failed_builds"], p["failure_rate"]) for p in points] == [(1, 1, 1.0), (1, 1, 1.0), (2, 1, 0.5)]
+    assert all(p["average_predicted_risk"] == pytest.approx(0.73) for p in points)

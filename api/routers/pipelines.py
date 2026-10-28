@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import Literal
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import tempfile
@@ -18,11 +19,13 @@ from api.schemas import (
     BuildLogOut,
     DashboardSummaryOut,
     FailureTrendOut,
-    JobTelemetryOut,
     JobFailureAnalysisOut,
     JobFailureLogIn,
+    JobTelemetryOut,
+    ModelInfoOut,
     OperationalDashboardOut,
     PipelineOut,
+    RiskDistributionOut,
     RootCauseSummaryOut,
     ShadowBuildCreatedOut,
     ShadowOutcomeIn,
@@ -325,6 +328,21 @@ def record_shadow_outcome(
     }
 
 
+SPARKLINE_BUILDS = 12
+
+
+@router.get("/model", response_model=ModelInfoOut)
+def model_info(predictor: CICDPredictor = Depends(get_predictor)) -> dict:
+    """Describe the deployed failure model, its alert threshold and its held-out results."""
+    metadata = getattr(getattr(predictor, "model", None), "metadata", None) or {}
+    return {
+        "model_name": predictor.best_model_name,
+        "training_mode": predictor.preprocessing.get("training_mode"),
+        "decision_threshold": predictor.decision_threshold,
+        "holdout_metrics": metadata.get("holdout_metrics"),
+    }
+
+
 @router.get("/pipelines", response_model=list[PipelineOut])
 def list_pipelines(
     limit: int = Query(20, ge=1, le=100),
@@ -335,12 +353,15 @@ def list_pipelines(
     pipelines = db.query(Pipeline).order_by(Pipeline.created_at.desc()).offset(offset).limit(limit).all()
     output = []
     for pipeline in pipelines:
-        latest = (
+        recent = (
             db.query(BuildLog)
+            .options(joinedload(BuildLog.predictions))
             .filter(BuildLog.pipeline_id == pipeline.id)
             .order_by(BuildLog.timestamp.desc(), BuildLog.id.desc())
-            .first()
+            .limit(SPARKLINE_BUILDS)
+            .all()
         )
+        latest = recent[0] if recent else None
         latest_prediction = latest.predictions[0] if latest and latest.predictions else None
         output.append(
             {
@@ -349,6 +370,10 @@ def list_pipelines(
                 "status": pipeline.status,
                 "latest_build_status": latest.build_status if latest else None,
                 "latest_failure_probability": latest_prediction.failure_probability if latest_prediction else None,
+                # Oldest first, for the per-pipeline risk sparkline.
+                "recent_failure_probabilities": [
+                    log.predictions[0].failure_probability for log in reversed(recent) if log.predictions
+                ],
             }
         )
     return output
@@ -607,27 +632,75 @@ def dashboard_summary(
     }
 
 
+@router.get("/dashboard/risk-distribution", response_model=RiskDistributionOut)
+def risk_distribution(
+    threshold: float | None = Query(None, ge=0, le=1), db: Session = Depends(get_db)
+) -> dict:
+    """Count predictions in ten equal failure-probability bins, and how many reach ``threshold``."""
+    counts = [0] * 10
+    probabilities = [probability for (probability,) in db.query(Prediction.failure_probability).all()]
+    for probability in probabilities:
+        counts[min(int(probability * 10), 9)] += 1
+    return {
+        "bins": [{"start": i / 10, "end": (i + 1) / 10, "count": count} for i, count in enumerate(counts)],
+        "total": len(probabilities),
+        "flagged": None if threshold is None else sum(probability >= threshold for probability in probabilities),
+    }
+
+
 @router.get("/dashboard/failure-trends", response_model=list[FailureTrendOut])
 def failure_trends(
     days: int = Query(30, ge=1, le=365),
+    granularity: Literal["day", "build"] = Query("day"),
     db: Session = Depends(get_db),
 ) -> list[dict]:
-    """Return daily failure rates over builds with a reported outcome."""
+    """Failure risk and outcomes over time.
+
+    ``day``: per day, the average predicted risk of scored builds and the
+    failure rate over builds with a reported outcome (null when none).
+    ``build``: one point per scored build in time order, with its predicted
+    risk and the running failure rate of reported outcomes so far; useful
+    while there are too few days for a daily trend.
+    """
     since = datetime.now(timezone.utc) - timedelta(days=days)
-    logs = db.query(BuildLog).filter(BuildLog.timestamp >= since).order_by(BuildLog.timestamp).all()
-    grouped: dict[str, list[bool]] = {}
+    logs = (
+        db.query(BuildLog).options(joinedload(BuildLog.predictions))
+        .filter(BuildLog.timestamp >= since).order_by(BuildLog.timestamp, BuildLog.id).all()
+    )
+    if granularity == "build":
+        points, reported, failed_so_far = [], 0, 0
+        for log in logs:
+            failed = _observed_outcome(log)[1]
+            if failed is not None:
+                reported += 1; failed_so_far += failed
+            if log.predictions:
+                points.append({
+                    "date": _as_utc(log.timestamp).isoformat(),
+                    "total_builds": reported, "failed_builds": failed_so_far,
+                    "failure_rate": failed_so_far / reported if reported else None,
+                    "scored_builds": 1, "average_predicted_risk": log.predictions[0].failure_probability,
+                })
+        return points
+    risks: dict[str, list[float]] = {}
+    outcomes: dict[str, list[bool]] = {}
     for log in logs:
+        day = log.timestamp.date().isoformat()
+        if log.predictions:
+            risks.setdefault(day, []).append(log.predictions[0].failure_probability)
         failed = _observed_outcome(log)[1]
         if failed is not None:
-            grouped.setdefault(log.timestamp.date().isoformat(), []).append(failed)
+            outcomes.setdefault(day, []).append(failed)
+    days_seen = sorted(set(risks) | set(outcomes))
     return [
         {
-            "date": date_key,
-            "total_builds": len(outcomes),
-            "failed_builds": sum(outcomes),
-            "failure_rate": sum(outcomes) / len(outcomes),
+            "date": day,
+            "total_builds": len(outcomes.get(day, [])),
+            "failed_builds": sum(outcomes.get(day, [])),
+            "failure_rate": sum(outcomes[day]) / len(outcomes[day]) if day in outcomes else None,
+            "scored_builds": len(risks.get(day, [])),
+            "average_predicted_risk": sum(risks[day]) / len(risks[day]) if day in risks else None,
         }
-        for date_key, outcomes in grouped.items()
+        for day in days_seen
     ]
 
 
