@@ -8,9 +8,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from api.auth.security import get_password_hash
 from api.db.database import Base, get_db
-from api.db.models import User, UserRole
 from api.main import app
 from api.routers.pipelines import get_predictor
 
@@ -57,13 +55,6 @@ def client() -> TestClient:
     Base.metadata.create_all(engine)
     session_factory = sessionmaker(bind=engine, autocommit=False, autoflush=False)
     session = session_factory()
-    session.add(
-        User(
-            username="pipeline-dev",
-            hashed_password=get_password_hash("correct-password"),
-            role=UserRole.DEVELOPER,
-        )
-    )
     session.commit()
 
     def override_get_db():
@@ -82,19 +73,10 @@ def client() -> TestClient:
     Base.metadata.drop_all(engine)
 
 
-def _auth_headers(client: TestClient) -> dict[str, str]:
-    response = client.post(
-        "/auth/login", data={"username": "pipeline-dev", "password": "correct-password"}
-    )
-    return {"Authorization": f"Bearer {response.json()['access_token']}"}
-
 
 def test_build_persistence_pipeline_listing_and_dashboard_summary(client: TestClient) -> None:
-    assert client.post("/pipelines/demo-repo/builds", json={"gh_lang": "ruby"}).status_code == 401
-    headers = _auth_headers(client)
     first = client.post(
         "/pipelines/demo-repo/builds",
-        headers=headers,
         json={
             "git_diff_src_churn": 50,
             "gh_diff_files_added": 34,
@@ -111,17 +93,16 @@ def test_build_persistence_pipeline_listing_and_dashboard_summary(client: TestCl
 
     second = client.post(
         "/pipelines/demo-repo/builds",
-        headers=headers,
         json={"build_features": {"gh_lang": "ruby"}, "build_status": "passed"},
     )
     assert second.status_code == 200
-    pipelines = client.get("/pipelines", headers=headers)
+    pipelines = client.get("/pipelines")
     assert pipelines.status_code == 200
     assert pipelines.json()[0]["name"] == "demo-repo"
-    history = client.get("/pipelines/demo-repo/builds", headers=headers)
+    history = client.get("/pipelines/demo-repo/builds")
     assert history.status_code == 200
     assert len(history.json()) == 2
-    summary = client.get("/dashboard/summary", headers=headers)
+    summary = client.get("/dashboard/summary")
     assert summary.status_code == 200
     assert summary.json()["total_builds_analyzed"] == 2
     assert summary.json()["anomalies_detected"] == 2
@@ -129,26 +110,22 @@ def test_build_persistence_pipeline_listing_and_dashboard_summary(client: TestCl
 
 
 def test_pdf_report_receives_persisted_explanation(client: TestClient) -> None:
-    headers = _auth_headers(client)
     response = client.post(
         "/pipelines/demo-repo/builds?explain=true",
-        headers=headers,
         json={"gh_lang": "ruby"},
     )
     assert response.status_code == 200
     build_id = response.json()["build_log_id"]
-    history = client.get("/pipelines/demo-repo/builds", headers=headers)
+    history = client.get("/pipelines/demo-repo/builds")
     assert history.json()[0]["explanation"][0]["feature"] == "total_files_changed"
-    report = client.get(f"/pipelines/demo-repo/builds/{build_id}/report.pdf", headers=headers)
+    report = client.get(f"/pipelines/demo-repo/builds/{build_id}/report.pdf")
     assert report.status_code == 200
     assert report.content.startswith(b"%PDF")
 
 
 def test_shadow_prediction_records_later_actual_outcome_without_blocking(client: TestClient) -> None:
-    headers = _auth_headers(client)
     shadow = client.post(
         "/pipelines/shadow-repo/shadow-builds?explain=true",
-        headers=headers,
         json={"git_diff_src_churn": 500, "gh_lang": "python"},
     )
     assert shadow.status_code == 200
@@ -160,11 +137,10 @@ def test_shadow_prediction_records_later_actual_outcome_without_blocking(client:
     assert record["calibration_method"] == "raw"
     assert record["calibration_version"] is None
 
-    pending_history = client.get("/pipelines/shadow-repo/builds", headers=headers)
+    pending_history = client.get("/pipelines/shadow-repo/builds")
     assert pending_history.json()[0]["build_status"] == "pending"
     outcome = client.patch(
         f"/pipelines/shadow-repo/shadow-builds/{record['build_log_id']}/outcome",
-        headers=headers,
         json={"build_status": "failed", "failed_test_log": "database connection timeout"},
     )
     assert outcome.status_code == 200
@@ -172,20 +148,18 @@ def test_shadow_prediction_records_later_actual_outcome_without_blocking(client:
     assert outcome.json()["root_cause_label"] == "database, timeout"
     assert client.patch(
         f"/pipelines/shadow-repo/shadow-builds/{record['build_log_id']}/outcome",
-        headers=headers,
         json={"build_status": "passed"},
     ).status_code == 409
 
 
 def test_builds_without_a_reported_outcome_never_count_as_failures(client: TestClient) -> None:
-    headers = _auth_headers(client)
     # The stub predicts "failed"; with no reported status the outcome is unknown.
-    unknown = client.post("/pipelines/rate-repo/builds", headers=headers, json={"gh_lang": "ruby"})
-    client.post("/pipelines/rate-repo/builds", headers=headers,
+    unknown = client.post("/pipelines/rate-repo/builds", json={"gh_lang": "ruby"})
+    client.post("/pipelines/rate-repo/builds",
                 json={"build_features": {"gh_lang": "ruby"}, "build_status": "passed"})
-    history = client.get("/pipelines/rate-repo/builds", headers=headers).json()
+    history = client.get("/pipelines/rate-repo/builds").json()
     assert {build["id"]: build["build_status"] for build in history}[unknown.json()["build_log_id"]] == "unknown"
-    summary = client.get("/dashboard/summary", headers=headers).json()
+    summary = client.get("/dashboard/summary").json()
     assert summary["builds_with_outcome"] == 1 and summary["overall_failure_rate"] == 0.0
-    trend = client.get("/dashboard/failure-trends", headers=headers).json()
+    trend = client.get("/dashboard/failure-trends").json()
     assert [(day["total_builds"], day["failed_builds"]) for day in trend] == [(1, 0)]

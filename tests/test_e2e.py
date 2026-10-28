@@ -1,4 +1,4 @@
-"""End-to-end authenticated build submission workflow test."""
+"""End-to-end build submission workflow test."""
 
 import pytest
 from fastapi.testclient import TestClient
@@ -6,9 +6,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from api.auth.security import get_password_hash
 from api.db.database import Base, get_db
-from api.db.models import BuildLog, User, UserRole
+from api.db.models import BuildLog
 from api.main import app
 from api.routers.pipelines import get_predictor
 
@@ -40,7 +39,6 @@ def client():
     Base.metadata.create_all(engine)
     session_factory = sessionmaker(bind=engine, autocommit=False, autoflush=False)
     session = session_factory()
-    session.add(User(username="e2e-dev", hashed_password=get_password_hash("correct-password"), role=UserRole.DEVELOPER))
     session.commit()
 
     def override_get_db():
@@ -59,14 +57,10 @@ def client():
     Base.metadata.drop_all(engine)
 
 
-def test_authenticated_build_submission_persists_and_updates_dashboard(client) -> None:
+def test_build_submission_persists_and_updates_dashboard(client) -> None:
     test_client, session_factory = client
-    login = test_client.post("/auth/login", data={"username": "e2e-dev", "password": "correct-password"})
-    assert login.status_code == 200
-    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
     submitted = test_client.post(
         "/pipelines/e2e-repo/builds",
-        headers=headers,
         json={
             "git_diff_src_churn": 5_000,
             "gh_diff_files_added": 34,
@@ -86,7 +80,7 @@ def test_authenticated_build_submission_persists_and_updates_dashboard(client) -
     assert response["predicted_status"] in {"passed", "failed"}
     assert session_factory().query(BuildLog).count() == 1
 
-    summary = test_client.get("/dashboard/summary", headers=headers)
+    summary = test_client.get("/dashboard/summary")
     assert summary.status_code == 200
     assert summary.json()["total_builds_analyzed"] == 1
     assert summary.json()["pipelines_monitored"] == 1

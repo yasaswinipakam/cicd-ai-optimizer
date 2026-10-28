@@ -6,7 +6,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from api.db.database import Base
-from api.db.models import BuildLog, Pipeline, Prediction, User, UserRole
+from api.db.models import BuildLog, Pipeline, Prediction
 
 
 def test_build_audit_relationships_resolve_with_in_memory_sqlite() -> None:
@@ -14,8 +14,7 @@ def test_build_audit_relationships_resolve_with_in_memory_sqlite() -> None:
     Base.metadata.create_all(engine)
     session = sessionmaker(bind=engine)()
     try:
-        user = User(username="developer", hashed_password="bcrypt-hash", role=UserRole.DEVELOPER)
-        pipeline = Pipeline(name="main-ci", status="active", owner=user)
+        pipeline = Pipeline(name="main-ci", status="active")
         build_log = BuildLog(
             pipeline=pipeline,
             timestamp=datetime.now(timezone.utc),
@@ -39,7 +38,6 @@ def test_build_audit_relationships_resolve_with_in_memory_sqlite() -> None:
         session.expire_all()
 
         persisted_prediction = session.query(Prediction).one()
-        assert persisted_prediction.build_log.pipeline.owner.username == "developer"
         assert persisted_prediction.build_log.pipeline.name == "main-ci"
         assert persisted_prediction.build_log.predictions[0].id == persisted_prediction.id
     finally:

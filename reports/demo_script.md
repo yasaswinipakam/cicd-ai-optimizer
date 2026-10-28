@@ -16,8 +16,8 @@
 1. **0:00–0:45 — architecture and startup.** Show `docker compose up --build`
    and point out the API and dashboard services. Explain that GitHub Actions and
    Jenkins webhooks feed the data-collection layer.
-2. **0:45–1:30 — authentication.** Log in as `admin` with the password configured
-   in `.env`; show the Dashboard page and four live summary cards.
+2. **0:45–1:30 — dashboard.** Open the Dashboard page and show the live summary
+   cards and failure-rate trend.
 3. **1:30–2:30 — streaming CI data.** Run:
 
    ```bash

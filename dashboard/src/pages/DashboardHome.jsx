@@ -155,7 +155,7 @@ function RuntimeSection({ operational }) {
 
 export default function DashboardHome() {
   const [summary, setSummary] = useState(null); const [trends, setTrends] = useState([]); const [operational, setOperational] = useState(null); const [error, setError] = useState('')
-  useEffect(() => { Promise.all([client.get('/dashboard/summary'), client.get('/dashboard/failure-trends?days=30'), client.get('/dashboard/operational-summary')]).then(([s, t, o]) => { setSummary(s.data); setTrends(t.data.map(x => ({ ...x, rate: +(x.failure_rate * 100).toFixed(1) }))); setOperational(o.data) }).catch(() => setError('Unable to load dashboard data. Please sign in again.')) }, [])
+  useEffect(() => { Promise.all([client.get('/dashboard/summary'), client.get('/dashboard/failure-trends?days=30'), client.get('/dashboard/operational-summary')]).then(([s, t, o]) => { setSummary(s.data); setTrends(t.data.map(x => ({ ...x, rate: +(x.failure_rate * 100).toFixed(1) }))); setOperational(o.data) }).catch(() => setError('Unable to reach the API. Is it running?')) }, [])
   if (error) return <p className="rounded-control border border-danger/30 bg-danger/10 p-4 text-danger" role="alert">{error}</p>
   if (!summary) return <Loading>Loading dashboard…</Loading>
   return <>

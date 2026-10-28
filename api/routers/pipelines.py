@@ -1,4 +1,4 @@
-"""Authenticated prediction, build-history, and dashboard API endpoints."""
+"""Prediction, build-history, and dashboard API endpoints."""
 
 from __future__ import annotations
 
@@ -10,9 +10,8 @@ import tempfile
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session, joinedload
 
-from api.auth.dependencies import get_current_user
 from api.db.database import get_db
-from api.db.models import BuildLog, JobFailureAnalysis, JobRun, Pipeline, Prediction, User, WorkflowRun
+from api.db.models import BuildLog, JobFailureAnalysis, JobRun, Pipeline, Prediction, WorkflowRun
 from api.schemas import (
     BuildCreatedOut,
     BuildFeaturesIn,
@@ -50,13 +49,13 @@ def get_predictor() -> CICDPredictor:
         ) from error
 
 
-def _find_or_create_pipeline(identifier: str, db: Session, owner: User) -> Pipeline:
+def _find_or_create_pipeline(identifier: str, db: Session) -> Pipeline:
     """Resolve a numeric primary key or human-readable pipeline name."""
     pipeline = db.query(Pipeline).filter(Pipeline.name == identifier).first()
     if pipeline is None and identifier.isdigit():
         pipeline = db.get(Pipeline, int(identifier))
     if pipeline is None:
-        pipeline = Pipeline(name=identifier, status="active", owner_id=owner.id)
+        pipeline = Pipeline(name=identifier, status="active")
         db.add(pipeline)
         db.flush()
     return pipeline
@@ -142,11 +141,10 @@ def create_build(
     payload: BuildFeaturesIn,
     explain: bool = Query(False),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
     predictor: CICDPredictor = Depends(get_predictor),
 ) -> dict:
     """Analyze, persist, and return one new build for a pipeline."""
-    pipeline = _find_or_create_pipeline(pipeline_id, db, current_user)
+    pipeline = _find_or_create_pipeline(pipeline_id, db)
     now = datetime.now(timezone.utc)
     features, context = _with_stream_context(predictor, db, pipeline, payload.build_features, now)
     analysis = (
@@ -200,7 +198,6 @@ def create_shadow_build(
     payload: BuildFeaturesIn,
     explain: bool = Query(False),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
     predictor: CICDPredictor = Depends(get_predictor),
 ) -> dict:
     """Persist a non-blocking pre-build prediction that awaits an actual CI outcome.
@@ -209,7 +206,7 @@ def create_shadow_build(
     alter any CI build. Use the outcome endpoint after the CI provider reports
     `passed` or `failed` to create an auditable live-evaluation record.
     """
-    pipeline = _find_or_create_pipeline(pipeline_id, db, current_user)
+    pipeline = _find_or_create_pipeline(pipeline_id, db)
     now = datetime.now(timezone.utc)
     features, context = _with_stream_context(predictor, db, pipeline, payload.build_features, now)
     analysis = predictor.full_analysis(features, include_explanation=explain)
@@ -279,7 +276,6 @@ def record_shadow_outcome(
     build_id: int,
     payload: ShadowOutcomeIn,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
     predictor: CICDPredictor = Depends(get_predictor),
 ) -> dict:
     """Attach the observed CI result to a shadow record without rescoring it."""
@@ -334,7 +330,6 @@ def list_pipelines(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ) -> list[dict]:
     """List pipelines and their most recently analyzed build."""
     pipelines = db.query(Pipeline).order_by(Pipeline.created_at.desc()).offset(offset).limit(limit).all()
@@ -365,7 +360,6 @@ def list_builds(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ) -> list[dict]:
     """List one pipeline's build history, newest first."""
     pipeline = db.query(Pipeline).filter(Pipeline.name == pipeline_id).first()
@@ -413,7 +407,6 @@ def list_job_telemetry(
     pipeline_id: str,
     limit: int = Query(100, ge=1, le=500),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ) -> list[dict]:
     """Return persisted runtime telemetry for bottleneck/stall visualization.
 
@@ -462,7 +455,6 @@ def ingest_job_failure_log(
     job_run_id: int,
     payload: JobFailureLogIn,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ) -> dict:
     """Store and classify an actual failed-job log after redaction.
 
@@ -507,7 +499,6 @@ def get_job_failure_analysis(
     pipeline_id: str,
     job_run_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ) -> dict:
     """Return a stored post-failure diagnostic without exposing raw log text."""
     analysis = (
@@ -535,7 +526,6 @@ def download_build_report(
     pipeline_id: str,
     build_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ) -> Response:
     """Generate and return a temporary PDF report for one persisted build."""
     pipeline = db.query(Pipeline).filter(Pipeline.name == pipeline_id).first()
@@ -589,7 +579,7 @@ def download_build_report(
 
 @router.get("/dashboard/summary", response_model=DashboardSummaryOut)
 def dashboard_summary(
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
+    db: Session = Depends(get_db)
 ) -> dict:
     """Return system-wide prediction and root-cause aggregates."""
     logs = db.query(BuildLog).options(joinedload(BuildLog.predictions)).all()
@@ -621,7 +611,6 @@ def dashboard_summary(
 def failure_trends(
     days: int = Query(30, ge=1, le=365),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ) -> list[dict]:
     """Return daily failure rates over builds with a reported outcome."""
     since = datetime.now(timezone.utc) - timedelta(days=days)
@@ -644,7 +633,7 @@ def failure_trends(
 
 @router.get("/dashboard/operational-summary", response_model=OperationalDashboardOut)
 def operational_dashboard_summary(
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
+    db: Session = Depends(get_db)
 ) -> dict:
     """Aggregate runtime bottleneck and post-failure evidence across pipelines.
 

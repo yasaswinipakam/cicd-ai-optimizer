@@ -9,9 +9,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from api.auth.security import get_password_hash
 from api.db.database import Base, get_db
-from api.db.models import BuildLog, Prediction, User, UserRole
+from api.db.models import BuildLog, Prediction
 from api.main import app
 from api.routers.pipelines import get_predictor
 
@@ -58,13 +57,6 @@ def client():
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine)
     session = factory()
-    session.add(
-        User(
-            username="optimization-user",
-            hashed_password=get_password_hash("password"),
-            role=UserRole.DEVELOPER,
-        )
-    )
     session.commit()
     predictor = RecordingPredictor()
 
@@ -83,12 +75,6 @@ def client():
     session.close()
     Base.metadata.drop_all(engine)
 
-
-def _headers(test_client: TestClient) -> dict[str, str]:
-    token = test_client.post(
-        "/auth/login", data={"username": "optimization-user", "password": "password"}
-    ).json()["access_token"]
-    return {"Authorization": f"Bearer {token}"}
 
 
 def _payload() -> dict:
@@ -111,14 +97,13 @@ def _payload() -> dict:
 
 def test_optimization_simulation_is_single_intervention_deterministic_and_database_free(client) -> None:
     test_client, factory, predictor = client
-    headers = _headers(test_client)
     payload = _payload()
     original_payload = deepcopy(payload)
     before_logs = factory().query(BuildLog).count()
     before_predictions = factory().query(Prediction).count()
 
-    first = test_client.post("/predict/whatif/optimization", headers=headers, json=payload)
-    second = test_client.post("/predict/whatif/optimization", headers=headers, json=payload)
+    first = test_client.post("/predict/whatif/optimization", json=payload)
+    second = test_client.post("/predict/whatif/optimization", json=payload)
 
     assert first.status_code == 200
     assert second.status_code == 200
@@ -157,11 +142,9 @@ def test_optimization_simulation_is_single_intervention_deterministic_and_databa
 )
 def test_optimization_simulation_rejects_invalid_interventions(client, intervention) -> None:
     test_client, factory, _predictor = client
-    headers = _headers(test_client)
     before_logs = factory().query(BuildLog).count()
     response = test_client.post(
         "/predict/whatif/optimization",
-        headers=headers,
         json={"build_features": {"gh_lang": "ruby"}, "intervention": intervention},
     )
     assert response.status_code == 422
@@ -170,11 +153,9 @@ def test_optimization_simulation_rejects_invalid_interventions(client, intervent
 
 def test_optimization_simulation_rejects_multiple_and_post_build_inputs(client) -> None:
     test_client, factory, _predictor = client
-    headers = _headers(test_client)
     before_logs = factory().query(BuildLog).count()
     multiple = test_client.post(
         "/predict/whatif/optimization",
-        headers=headers,
         json={
             "build_features": {},
             "interventions": [
@@ -185,7 +166,6 @@ def test_optimization_simulation_rejects_multiple_and_post_build_inputs(client) 
     )
     leakage = test_client.post(
         "/predict/whatif/optimization",
-        headers=headers,
         json={
             "build_features": {"tr_log_buildduration": 20},
             "intervention": {"field": "git_diff_src_churn", "value": 1},

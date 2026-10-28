@@ -1,4 +1,4 @@
-"""Webhook authorization and GitHub Actions ingestion tests."""
+"""Webhook signature and GitHub Actions ingestion tests."""
 
 import pytest
 import hashlib
@@ -10,9 +10,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from api.auth.security import get_password_hash
 from api.db.database import Base, get_db
-from api.db.models import BuildLog, JobFailureAnalysis, JobRun, JobStepRun, Pipeline, ProviderWorkflowOutcome, User, UserRole, WorkflowRun
+from api.db.models import BuildLog, JobFailureAnalysis, JobRun, JobStepRun, Pipeline, ProviderWorkflowOutcome, WorkflowRun
 from api.main import app
 from api.routers.pipelines import get_predictor
 
@@ -31,7 +30,7 @@ def client(monkeypatch):
     engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine)
-    session = factory(); session.add(User(username="admin", hashed_password=get_password_hash("password"), role=UserRole.ADMINISTRATOR)); session.commit()
+    session = factory()
     def override_db():
         db = factory()
         try: yield db
@@ -58,8 +57,7 @@ def test_completed_workflow_run_is_a_idempotent_outcome_audit_not_a_prediction(c
         assert db.query(BuildLog).count() == 0
     finally:
         db.close()
-    token = client.post("/auth/login", data={"username": "admin", "password": "password"}).json()["access_token"]
-    summary = client.get("/dashboard/summary", headers={"Authorization": f"Bearer {token}"})
+    summary = client.get("/dashboard/summary")
     assert summary.status_code == 200
     assert summary.json()["total_builds_analyzed"] == 0
 
@@ -126,12 +124,11 @@ def test_github_workflow_job_webhook_persists_runtime_telemetry_without_predicti
     finally:
         db.close()
 
-    token = client.post("/auth/login", data={"username": "admin", "password": "password"}).json()["access_token"]
-    telemetry = client.get("/pipelines/acme/demo/telemetry/jobs", headers={"Authorization": f"Bearer {token}"})
+    telemetry = client.get("/pipelines/acme/demo/telemetry/jobs")
     assert telemetry.status_code == 200
     assert telemetry.json()[0]["job_name"] == "unit tests"
     assert telemetry.json()[0]["bottleneck_status"] == "insufficient_history"
-    operational = client.get("/dashboard/operational-summary", headers={"Authorization": f"Bearer {token}"})
+    operational = client.get("/dashboard/operational-summary")
     assert operational.status_code == 200
     assert operational.json()["total_jobs_observed"] == 1
     assert operational.json()["failed_jobs_with_captured_logs"] == 0
@@ -179,18 +176,16 @@ def test_failed_job_log_is_sanitized_and_classified_without_creating_prediction(
     )
     assert response.status_code == 200
     job_id = response.json()["job_run_id"]
-    token = client.post("/auth/login", data={"username": "admin", "password": "password"}).json()["access_token"]
-    headers = {"Authorization": f"Bearer {token}"}
     log = "Request timed out while calling service\nTOKEN=super-secret-value\nError: connection reset"
     result = client.post(
         f"/pipelines/acme/demo/telemetry/jobs/{job_id}/failure-log",
-        json={"log_content": log}, headers=headers,
+        json={"log_content": log},
     )
     assert result.status_code == 200
     assert result.json()["category"] == "flaky_timing_network"
     assert "timed out" in result.json()["matched_signals"][0].lower()
     analysis = client.get(
-        f"/pipelines/acme/demo/telemetry/jobs/{job_id}/failure-analysis", headers=headers,
+        f"/pipelines/acme/demo/telemetry/jobs/{job_id}/failure-analysis",
     )
     assert analysis.status_code == 200
     db = next(app.dependency_overrides[get_db]())
@@ -228,15 +223,14 @@ def test_collector_can_attach_real_log_by_provider_job_id_without_a_human_jwt(cl
     )
     assert response.status_code == 200
     assert response.json()["category"] == "compilation_syntax"
-    token = client.post("/auth/login", data={"username": "admin", "password": "password"}).json()["access_token"]
-    summary = client.get("/dashboard/operational-summary", headers={"Authorization": f"Bearer {token}"})
+    summary = client.get("/dashboard/operational-summary")
     assert summary.status_code == 200
     assert summary.json()["total_jobs_observed"] == 1
     assert summary.json()["failed_jobs_with_captured_logs"] == 1
     assert summary.json()["top_failure_categories"][0]["category"] == "compilation_syntax"
 
 
-def test_authenticated_active_job_poller_handles_queued_and_stalled_jobs_without_predictions(client: TestClient):
+def test_active_job_poller_handles_queued_and_stalled_jobs_without_predictions(client: TestClient):
     def post_snapshot(job: dict, repository="acme/poller"):
         return client.post(
             "/webhooks/github-actions/job-telemetry",

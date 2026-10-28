@@ -10,9 +10,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from api.auth.security import get_password_hash
 from api.db.database import Base, get_db
-from api.db.models import User, UserRole
 from api.main import app
 from api.routers.pipelines import get_predictor
 
@@ -29,7 +27,7 @@ def client(monkeypatch):
     monkeypatch.setenv("GITHUB_WEBHOOK_SECRET", "signing-secret")
     engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(engine); factory = sessionmaker(bind=engine)
-    session = factory(); session.add(User(username="admin", hashed_password=get_password_hash("password"), role=UserRole.ADMINISTRATOR)); session.commit()
+    session = factory()
     def override_db():
         db = factory()
         try: yield db

@@ -116,7 +116,7 @@ it must not automatically block CI builds. The fixed-volume policy analysis is i
 On the untouched temporal test period, the predeclared 5%, 10%, 15%, 20%, and 35%
 top-risk policies provide explicit alert-volume versus failure-capture trade-offs.
 
-Use the authenticated shadow endpoints to record a prediction before a CI result
+Use the shadow endpoints to record a prediction before a CI result
 exists, then attach the observed result later. They never change CI execution:
 
 ```text
@@ -152,17 +152,12 @@ Initialize the local database with `.venv/bin/python -m api.db.init_db`, then ru
 the API with `.venv/bin/uvicorn api.main:app --reload` and the dashboard with
 `cd dashboard && npm run dev`.
 
-**Accounts.** No password is built in.
-- **Admin:** `admin` takes its password from `ADMIN_PASSWORD` (at least 12
-  characters). If that is unset, a random password is generated and printed
-  once.
-- **Developer:** a `dev` account is created only when `DEV_PASSWORD` is set.
-- **Older databases:** earlier versions seeded both accounts with a shared
-  default password. To change a password on an existing database, run:
+**No sign-in.** The dashboard and API have no accounts, so anyone who can
+reach the API can read and submit builds. Run it locally or behind your own
+network controls. Webhook endpoints still require their shared secrets.
 
-```bash
-.venv/bin/python -m api.db.init_db --set-password admin
-```
+`init_db` also migrates databases created by earlier versions: it removes the old
+accounts table and pipeline owners, and keeps every pipeline and build.
 
 ## Run with Docker
 

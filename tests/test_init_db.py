@@ -1,63 +1,46 @@
-"""Seeding never uses a shared default password."""
+"""Database setup creates no accounts, and migrates sign-in era databases without losing data."""
 
 import pytest
-from sqlalchemy import create_engine, select
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.pool import StaticPool
 
 import api.db.init_db as init_module
 import api.db.migrations as migrations_module
-from api.db.models import User
 
 
 @pytest.fixture()
-def database(monkeypatch):
+def engine(monkeypatch):
     engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)
-    sessions = sessionmaker(bind=engine, autocommit=False, autoflush=False)
     for module in (init_module, migrations_module):
         monkeypatch.setattr(module, "engine", engine)
-    monkeypatch.setattr(init_module, "SessionLocal", sessions)
-    for name in ("ADMIN_PASSWORD", "DEV_PASSWORD"):
-        monkeypatch.delenv(name, raising=False)
-    return sessions
+    return engine
 
 
-def _users(sessions) -> dict[str, User]:
-    with sessions() as session:
-        return {user.username: user for user in session.scalars(select(User))}
-
-
-def test_admin_password_comes_from_environment_and_dev_is_opt_in(database, monkeypatch) -> None:
-    monkeypatch.setenv("ADMIN_PASSWORD", "a-real-admin-passphrase")
+def test_fresh_database_has_no_accounts(engine) -> None:
     init_module.init_db()
-    users = _users(database)
-    assert set(users) == {"admin"}
-    assert init_module.password_context.verify("a-real-admin-passphrase", users["admin"].hashed_password)
+    inspector = inspect(engine)
+    assert "users" not in inspector.get_table_names()
+    assert "owner_id" not in {c["name"] for c in inspector.get_columns("pipelines")}
 
 
-def test_unset_admin_password_is_random_and_printed_once(database, capsys) -> None:
+def test_sign_in_era_database_keeps_pipelines_and_builds(engine) -> None:
+    with engine.begin() as connection:
+        connection.execute(text("CREATE TABLE users (id INTEGER PRIMARY KEY, username VARCHAR(100) NOT NULL, "
+                                "hashed_password VARCHAR(255) NOT NULL)"))
+        connection.execute(text("CREATE TABLE pipelines (id INTEGER PRIMARY KEY, name VARCHAR(255) NOT NULL, "
+                                "status VARCHAR(50) NOT NULL, created_at DATETIME NOT NULL, "
+                                "owner_id INTEGER NOT NULL REFERENCES users(id))"))
+        connection.execute(text("INSERT INTO users VALUES (1, 'admin', 'hash')"))
+        connection.execute(text("INSERT INTO pipelines VALUES (7, 'acme', 'active', '2026-01-01', 1)"))
     init_module.init_db()
-    printed = capsys.readouterr().out
-    generated = printed.split("(shown once): ")[1].split()[0]
-    admin = _users(database)["admin"]
-    assert len(generated) >= 20 and init_module.password_context.verify(generated, admin.hashed_password)
-    assert not init_module.password_context.verify("changeme123", admin.hashed_password)
-
-
-@pytest.mark.parametrize("bad", ["changeme123", "replace-with-a-strong-admin-password", "short"])
-def test_placeholder_default_and_short_passwords_are_refused(database, monkeypatch, bad) -> None:
-    monkeypatch.setenv("ADMIN_PASSWORD", bad)
-    with pytest.raises(SystemExit):
-        init_module.init_db()
-    assert _users(database) == {}
-
-
-def test_set_password_replaces_an_existing_password(database, monkeypatch) -> None:
-    monkeypatch.setenv("ADMIN_PASSWORD", "a-real-admin-passphrase")
-    monkeypatch.setenv("DEV_PASSWORD", "a-real-dev-passphrase")
-    init_module.init_db()
-    init_module.set_password("dev", "a-brand-new-passphrase")
-    dev = _users(database)["dev"]
-    assert init_module.password_context.verify("a-brand-new-passphrase", dev.hashed_password)
-    with pytest.raises(SystemExit):
-        init_module.set_password("nobody", "a-brand-new-passphrase")
+    with engine.begin() as connection:
+        connection.execute(text("INSERT INTO build_logs (pipeline_id, timestamp, build_status, stage_durations, raw_features) "
+                                "VALUES (7, '2026-01-02', 'passed', '{}', '{}')"))
+    init_module.init_db()  # idempotent
+    inspector = inspect(engine)
+    assert "users" not in inspector.get_table_names()
+    assert "owner_id" not in {c["name"] for c in inspector.get_columns("pipelines")}
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT id, name FROM pipelines")).all() == [(7, "acme")]
+        assert connection.execute(text("SELECT pipeline_id FROM build_logs")).scalar() == 7
+        assert connection.execute(text("PRAGMA foreign_key_check")).all() == []
