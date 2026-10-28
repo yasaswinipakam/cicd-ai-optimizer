@@ -1,0 +1,8 @@
+field,source,known_before_trigger,predictor_v1_1,risk
+additions,GitHub commit stats,True,True,commit exists before CI trigger
+deletions,GitHub commit stats,True,True,commit exists before CI trigger
+total_changes,GitHub commit stats,True,True,commit exists before CI trigger
+changed_file_count,GitHub commit metadata,True,True,commit exists before CI trigger
+path criticality badges,GitHub commit paths + frozen taxonomy,True,False,descriptive-only; no predictive claim
+workflow names/count,post-trigger Actions metadata,False,False,excluded: workflow fan-out/outcomes can accrue after trigger
+finish/duration,Actions updated_at,False,False,history boundary only; never a predictor

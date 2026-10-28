@@ -1,0 +1,5 @@
+cohort_id,repository,domain_rationale,ci_platform,selection_status,retrieval_date,source_url,notes
+finance_pilot_v1,apache/fineract,Core banking and microfinance platform,GitHub Actions,predeclared_candidate,2026-10-15,https://github.com/apache/fineract,"Public repository; GitHub Actions CI is documented by the project."
+finance_pilot_v1,killbill/killbill,Subscription billing and payments platform,GitHub Actions,predeclared_candidate,2026-10-15,https://github.com/killbill/killbill,"Public repository page exposes Actions; CI-run eligibility is checked only after collection."
+finance_pilot_v1,firefly-iii/firefly-iii,Personal finance management application,GitHub Actions,predeclared_candidate,2026-10-15,https://github.com/firefly-iii/firefly-iii/actions,"Public Actions page lists CI runs; scheduled/release workflows will be excluded by protocol."
+finance_pilot_v1,actualbudget/actual,Personal finance and budgeting application,GitHub Actions,predeclared_candidate,2026-10-15,https://github.com/actualbudget/actual,"Public repository with GitHub workflow files; run eligibility is checked only after collection."

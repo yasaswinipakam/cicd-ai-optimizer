@@ -1,0 +1,26 @@
+{
+  "study": "phase2_finance_pilot_v1_1",
+  "seed": 20261013,
+  "features": [
+    "log_additions",
+    "log_deletions",
+    "log_total_changes",
+    "log_changed_file_count",
+    "hour_sin",
+    "hour_cos",
+    "dow_sin",
+    "dow_cos",
+    "previous_completed_failure",
+    "last5_completed_failure_rate",
+    "all_prior_completed_failure_rate",
+    "hours_since_completed",
+    "hours_since_failure"
+  ],
+  "excluded_descriptive_badges": true,
+  "finish_buffer_hours": 6,
+  "rows": 1787,
+  "git_commit": "unavailable",
+  "python": "3.13.9 | packaged by Anaconda, Inc. | (main, Oct 21 2025, 19:11:29) [Clang 20.1.8 ]",
+  "sklearn": "1.7.2",
+  "platform": "macOS-26.1-arm64-arm-64bit-Mach-O"
+}

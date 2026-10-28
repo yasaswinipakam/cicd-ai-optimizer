@@ -1,0 +1,12 @@
+{
+  "study": "phase2_finance_pilot_v1_1",
+  "source": "data/raw/phase2_finance_v1/workflow_runs_raw.parquet",
+  "unit": "repository + head_sha commit/check-suite",
+  "source_filter": "completed, run_attempt==1, event in {push,pull_request}, conclusion in {success,failure,startup_failure}",
+  "ordinary_failure_label": "any constituent conclusion == failure",
+  "startup_failure": "reported separately; not merged into ordinary failure label",
+  "trigger_time": "minimum constituent created_at",
+  "finish_time": "maximum constituent updated_at",
+  "excluded_missing_head_sha_runs": 0,
+  "output": "data/processed/phase2_finance_v1_commit_suites.parquet"
+}

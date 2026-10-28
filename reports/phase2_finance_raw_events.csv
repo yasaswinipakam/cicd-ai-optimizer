@@ -1,0 +1,5 @@
+repository,dynamic,issue_comment,issues,merge_group,pull_request,pull_request_target,push,release,schedule,workflow_dispatch,workflow_run
+actualbudget/actual,79,3213,701,1530,20098,4821,1429,10,469,5,7645
+apache/fineract,219,0,0,0,35048,0,4470,0,254,9,0
+firefly-iii/firefly-iii,368,0,15,0,69,0,2,0,19,9,0
+killbill/killbill,36,0,0,0,354,0,134,0,0,21,0
