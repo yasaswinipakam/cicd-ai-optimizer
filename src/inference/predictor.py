@@ -17,9 +17,11 @@ from src.inference.explainer import PredictionExplainer
 from src.inference.calibration import ProbabilityCalibrator
 from src.features.engineer import HISTORY_COLS, STREAK_COLS
 from src.features.schema import DIRECT_PREBUILD_FEATURE_COLS
+from src.models.tier_e import TierEBlend
 
-TIER_E_MODEL_NAME = "tier_e_blend"
 TIME_COLS = ("hour", "day_of_week", "month", "is_weekend", "is_night")
+# Branches the GitHub Actions training data treats as the default branch.
+GHA_DEFAULT_BRANCHES = ("main", "master")
 
 
 class CICDPredictor:
@@ -58,12 +60,15 @@ class CICDPredictor:
         )
         self.anomaly_feature_cols: list[str] = self.preprocessing["feature_cols"]
         assert_features_available_for_prediction(self.anomaly_feature_cols)
-        self.is_tier_e = self.best_model_name == TIER_E_MODEL_NAME
+        self.is_tier_e = isinstance(self.model, TierEBlend)
+        # Which CI provider's inputs the failure model reads: "travis" or "github_actions".
+        self.input_schema = self.model.metadata.get("input_schema", "travis") if self.is_tier_e else "travis"
         if self.is_tier_e:
             # The blend carries its own global Platt map and threshold; the
             # random forest's calibrator and threshold do not apply to it.
             self.calibration_method, self.calibrator, self.calibrator_artifact_sha256 = "platt_global", None, None
-            self.preprocessing = {**self.preprocessing, "training_mode": f"tier_e:{self.model.metadata['variant']}"}
+            prefix = "tier_e_gha" if self.input_schema == "github_actions" else "tier_e"
+            self.preprocessing = {**self.preprocessing, "training_mode": f"{prefix}:{self.model.metadata['variant']}"}
             self.feature_cols: list[str] = self.model.feature_cols
             assert_features_available_for_prediction(self.feature_cols)
         else:
@@ -188,9 +193,14 @@ class CICDPredictor:
         derived = {
             "hour": timestamp.hour, "day_of_week": timestamp.day_of_week, "month": timestamp.month,
             "is_weekend": int(timestamp.day_of_week in (5, 6)), "is_night": int(0 <= timestamp.hour < 6),
-            "is_master": int(str(raw.get("git_branch", "")) == "master"),
-            "gh_is_pr": int(str(raw.get("gh_is_pr", "")).strip().lower() in ("true", "1", "1.0")),
         }
+        if self.input_schema == "github_actions":
+            derived.update(self._gha_derived(raw))
+        else:
+            derived.update({
+                "is_master": int(str(raw.get("git_branch", "")) == "master"),
+                "gh_is_pr": int(str(raw.get("gh_is_pr", "")).strip().lower() in ("true", "1", "1.0")),
+            })
         fill = getattr(self.model, "input_fill", {})
         row = {}
         for column in self.model.numeric:
@@ -201,9 +211,31 @@ class CICDPredictor:
                 # Change/repository inputs were never missing in training: use the training median.
                 row[column] = fill[column] if np.isnan(value) and column in fill else value
         for column in self.model.categorical:
-            value = raw.get(column)
+            value = derived.get(column, raw.get(column))
             row[column] = None if value is None or pd.isna(value) else str(value)
         return pd.DataFrame([row], columns=self.feature_cols)
+
+    def _gha_derived(self, raw: dict) -> dict:
+        """GitHub Actions inputs defined as in ``scripts/evaluate_gha_tier_e.py``.
+
+        A run is ``push`` or ``pull_request``; its commit's size comes from the
+        commits API (additions, deletions, files_modified, num_parents).  Only
+        values that can be derived are returned; the rest fall back to the
+        payload, then to training medians.
+        """
+        out: dict = {"is_pr": int(str(raw.get("event", "")) == "pull_request"),
+                     "is_default_branch": int(str(raw.get("head_branch") or "") in GHA_DEFAULT_BRANCHES)}
+        additions, deletions = (self._number_or_missing(raw.get(key)) for key in ("additions", "deletions"))
+        if not (np.isnan(additions) or np.isnan(deletions)) and raw.get("total_churn") is None:
+            out["total_churn"] = additions + deletions
+        parents = self._number_or_missing(raw.get("num_parents"))
+        if not np.isnan(parents) and raw.get("is_merge") is None:
+            out["is_merge"] = int(parents > 1)
+        if raw.get("msg_len") is None and isinstance(raw.get("commit_message"), str):
+            out["msg_len"] = len(raw["commit_message"])
+        if raw.get("workflow") is None and raw.get("workflow_id") is not None:
+            out["workflow"] = str(raw["workflow_id"])
+        return out
 
     def _tier_e_explanation(self, build_features: dict, top_n: int = 8) -> list[dict]:
         """Top SHAP contributions of the blend's binary half, for observed numeric inputs."""

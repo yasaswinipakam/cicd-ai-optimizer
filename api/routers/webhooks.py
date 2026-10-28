@@ -9,13 +9,14 @@ import os
 from datetime import datetime, timezone
 from typing import Any
 
+import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from api.db.database import get_db
-from api.db.models import JobRun, JobStepRun, Pipeline, ProviderWorkflowOutcome, WorkflowRun
+from api.db.models import BuildLog, JobRun, JobStepRun, Pipeline, ProviderWorkflowOutcome, WorkflowRun
 from api.diagnostics_service import save_job_failure_analysis
-from api.routers.pipelines import _find_or_create_pipeline, create_build, get_predictor
+from api.routers.pipelines import _find_or_create_pipeline, create_build, create_shadow_build, get_predictor
 from api.schemas import BuildFeaturesIn, GitHubJobLogCollectorIn, GitHubJobTelemetryCollectorIn, JobFailureAnalysisOut
 from src.inference.predictor import CICDPredictor
 from src.models.bottleneck import assess_job_timing
@@ -242,18 +243,118 @@ def _github_job_telemetry(payload: dict[str, Any], db: Session) -> dict:
     }
 
 
+# The GitHub Actions model was trained on first-attempt push and pull_request
+# runs labelled success (passed) or failure/startup_failure (failed).  Other
+# conclusions (cancelled, timed_out, ...) were left out of training, so here
+# they are stored as-is and never become history.
+GHA_SCORED_EVENTS = ("push", "pull_request")
+GHA_OUTCOMES = {"success": "passed", "failure": "failed", "startup_failure": "failed"}
+GITHUB_API = "https://api.github.com"
+
+
+def _resolve_predictor(request: Request) -> CICDPredictor | None:
+    """The deployed predictor, or None if no model is trained yet.
+
+    Resolved per event rather than as an endpoint dependency, so telemetry and
+    outcome events keep working without model artifacts.  Honours test
+    overrides of ``get_predictor``.
+    """
+    try:
+        return request.app.dependency_overrides.get(get_predictor, get_predictor)()
+    except HTTPException:
+        return None
+
+
+async def _fetch_commit(repository: str, sha: str) -> dict:
+    """Commit size from the commits API, defined as in the GHA training data.
+
+    Needs ``GITHUB_TOKEN`` (read access to the repository).  Without it, or on
+    any API error, the run is scored with training medians for these inputs.
+    Changed files are counted from the first page (up to 300 files).
+    """
+    token = os.getenv("GITHUB_TOKEN")
+    if not token or not repository or not sha:
+        return {}
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json",
+               "X-GitHub-Api-Version": "2022-11-28"}
+    try:
+        async with httpx.AsyncClient(base_url=GITHUB_API, timeout=5, headers=headers) as client:
+            response = await client.get(f"/repos/{repository}/commits/{sha}")
+    except httpx.HTTPError:
+        return {}
+    if response.status_code != 200:
+        return {}
+    body = response.json()
+    return {"additions": body["stats"]["additions"], "deletions": body["stats"]["deletions"],
+            "files_modified": len(body.get("files", [])), "num_parents": len(body["parents"]),
+            "msg_len": len(body["commit"]["message"]), "committed_at": body["commit"]["committer"]["date"]}
+
+
+def _github_run_features(run: dict[str, Any]) -> dict[str, Any]:
+    """Model inputs available when GitHub requests a workflow run."""
+    head_commit = run.get("head_commit") or {}
+    features = {
+        "github_run_id": run.get("id"), "workflow_id": run.get("workflow_id"), "workflow_name": run.get("name"),
+        "event": run.get("event"), "head_branch": run.get("head_branch"), "head_sha": run.get("head_sha"),
+        "actor": (run.get("actor") or {}).get("login"), "gh_build_started_at": run.get("created_at"),
+        "committed_at": head_commit.get("timestamp"),
+        "msg_len": len(head_commit["message"]) if isinstance(head_commit.get("message"), str) else None,
+    }
+    return {key: value for key, value in features.items() if value is not None}
+
+
+def _shadow_build_for_run(pipeline: Pipeline, provider_run_id: Any, db: Session) -> BuildLog | None:
+    for build in db.query(BuildLog).filter(BuildLog.pipeline_id == pipeline.id).all():
+        if str((build.raw_features or {}).get("github_run_id")) == str(provider_run_id):
+            return build
+    return None
+
+
+async def _score_github_workflow_run(payload: dict[str, Any], db: Session, predictor: CICDPredictor | None) -> dict:
+    """Record a non-blocking prediction for a newly requested workflow run."""
+    run = payload.get("workflow_run") or {}
+    if run.get("id") is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="workflow_run id is required")
+    if run.get("event") not in GHA_SCORED_EVENTS or int(run.get("run_attempt") or 1) != 1:
+        return {"accepted": True, "ignored": True, "reason": "only first attempts of push and pull_request runs are scored"}
+    if predictor is None or getattr(predictor, "input_schema", None) != "github_actions":
+        return {"accepted": True, "ignored": True, "reason": "the deployed model does not score GitHub Actions runs"}
+    pipeline_name = _pipeline_name_from_github(payload, str(run["id"]))
+    pipeline = _find_or_create_pipeline(pipeline_name, db)
+    existing = _shadow_build_for_run(pipeline, run["id"], db)
+    if existing is not None:
+        return {"accepted": True, "duplicate": True, "build_log_id": existing.id, "pipeline": pipeline.name}
+    features = {**_github_run_features(run), **await _fetch_commit(pipeline_name, run.get("head_sha"))}
+    result = create_shadow_build(pipeline_id=pipeline_name, payload=BuildFeaturesIn(build_features=features),
+                                 explain=True, db=db, predictor=predictor)
+    return {"accepted": True, "duplicate": False, "build_log_id": result["build_log_id"], "pipeline": pipeline.name,
+            "failure_probability": result["failure_probability"], "is_alert": result["is_alert"]}
+
+
+def _attach_github_outcome(pipeline: Pipeline, run: dict[str, Any], conclusion: str, db: Session) -> int | None:
+    """Give the run's shadow build its real outcome; the prediction is never rescored."""
+    build = _shadow_build_for_run(pipeline, run.get("id"), db)
+    if build is None or build.build_status != "pending":
+        return None
+    build.build_status = GHA_OUTCOMES.get(conclusion, conclusion)
+    if conclusion in GHA_OUTCOMES:
+        # Training orders history by the run's finish time (its updated_at).
+        finished = _parse_provider_time(run.get("updated_at")) or datetime.now(timezone.utc)
+        build.raw_features = {**(build.raw_features or {}), "_outcome_recorded_at": finished.isoformat()}
+    return build.id
+
+
 def _record_github_workflow_outcome(payload: dict[str, Any], db: Session) -> dict:
-    """Persist a final workflow outcome without creating a post-build prediction."""
+    """Persist a final workflow outcome and attach it to the run's shadow prediction, if any."""
     run = payload.get("workflow_run") or {}
     provider_run_id = run.get("id")
     if provider_run_id is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="workflow_run id is required")
     conclusion = str(run.get("conclusion") or "").lower()
-    if conclusion not in {"success", "failure", "cancelled", "timed_out", "action_required"}:
+    if conclusion not in {"success", "failure", "startup_failure", "cancelled", "timed_out", "action_required"}:
         return {"accepted": True, "ignored": True, "reason": "unsupported or missing workflow conclusion"}
-    repository = run.get("head_repository") or payload.get("repository") or {}
-    pipeline_name = repository if isinstance(repository, str) else repository.get("full_name") or repository.get("name") or str(provider_run_id)
-    pipeline = _find_or_create_pipeline(pipeline_name, db)
+    # The base repository, not a fork's head repository, is the pipeline.
+    pipeline = _find_or_create_pipeline(_pipeline_name_from_github(payload, str(provider_run_id)), db)
     existing = (
         db.query(ProviderWorkflowOutcome)
         .filter(
@@ -275,8 +376,10 @@ def _record_github_workflow_outcome(payload: dict[str, Any], db: Session) -> dic
         raw_payload=payload,
     )
     db.add(outcome)
+    shadow_build_id = _attach_github_outcome(pipeline, run, conclusion, db)
     db.commit()
-    return {"accepted": True, "duplicate": False, "workflow_outcome_id": outcome.id, "pipeline": pipeline.name}
+    return {"accepted": True, "duplicate": False, "workflow_outcome_id": outcome.id, "pipeline": pipeline.name,
+            "shadow_build_id": shadow_build_id}
 
 
 @router.post("/github-actions")
@@ -299,6 +402,8 @@ async def github_actions_webhook(
         return _github_job_telemetry(payload, db)
     if event == "workflow_run" or (not event and "workflow_run" in payload):
         run = payload.get("workflow_run") or {}
+        if payload.get("action") == "requested":
+            return await _score_github_workflow_run(payload, db, _resolve_predictor(request))
         if payload.get("action") != "completed" or str(run.get("status") or "").lower() != "completed":
             return {"accepted": True, "ignored": True, "reason": "workflow run is not complete"}
         return _record_github_workflow_outcome(payload, db)

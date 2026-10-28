@@ -176,7 +176,8 @@ def test_chart_endpoints_report_model_distribution_and_recent_risk(client: TestC
     assert distribution["total"] == 3 and distribution["flagged"] == 0
     assert client.get("/dashboard/risk-distribution").json()["flagged"] is None
     model = client.get("/model").json()
-    assert model == {"model_name": "xgboost", "training_mode": "full", "decision_threshold": 0.4, "holdout_metrics": None}
+    assert model == {"model_name": "xgboost", "training_mode": "full", "decision_threshold": 0.4, "input_schema": None,
+                     "holdout_metrics": None, "new_repository_metrics": None}
 
 
 def test_build_granularity_trend_gives_one_point_per_scored_build(client: TestClient) -> None:

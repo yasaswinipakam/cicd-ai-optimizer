@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import tempfile
 
+import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session, joinedload
 
@@ -30,7 +31,7 @@ from api.schemas import (
     ShadowBuildCreatedOut,
     ShadowOutcomeIn,
 )
-from src.features.stream_context import PriorBuild, stream_context, stream_key
+from src.features.stream_context import PriorBuild, gha_stream_key, stream_context, stream_key
 from src.inference.predictor import CICDPredictor
 from api.diagnostics_service import save_job_failure_analysis
 from src.models.suggestions import get_suggestion
@@ -101,7 +102,21 @@ def _with_stream_context(
     """
     if not getattr(predictor, "uses_stream_context", False):
         return features, None
-    branch = str(features.get("git_branch") or "")
+    github = getattr(predictor, "input_schema", "travis") == "github_actions"
+
+    def key(raw: dict) -> str:
+        if github:
+            return gha_stream_key(raw.get("event"), raw.get("actor"), raw.get("head_branch"))
+        return stream_key(raw.get("gh_is_pr"), raw.get("gh_pull_req_num"), raw.get("git_branch"))
+
+    def previous_of(raw: dict) -> tuple:
+        # Travis: the latest earlier build on the branch.  GitHub Actions: the
+        # latest earlier run of the same workflow on the same stream.
+        if github:
+            return str(raw.get("workflow_id") or raw.get("workflow") or ""), key(raw)
+        return (str(raw.get("git_branch") or ""),)
+
+    current, current_previous = key(features), previous_of(features)
     prior, previous_build_id = [], None
     builds = (
         db.query(BuildLog).filter(BuildLog.pipeline_id == pipeline.id).order_by(BuildLog.timestamp, BuildLog.id).all()
@@ -114,16 +129,34 @@ def _with_stream_context(
             awaiting = (raw.get("_prediction_context") or {}).get("shadow_mode") and build.build_status == "pending"
             if not awaiting or now - started > timedelta(hours=STALE_PENDING_HOURS):
                 continue
-        prior.append(PriorBuild(build.id, started, stream_key(raw.get("gh_is_pr"), raw.get("gh_pull_req_num"), raw.get("git_branch")),
-                                finished, failed))
-        if str(raw.get("git_branch") or "") == branch:
+        prior.append(PriorBuild(build.id, started, key(raw), finished, failed))
+        if previous_of(raw) == current_previous:
             previous_build_id = build.id
-    context = stream_context(
-        prior, started_at=now, previous_build_id=previous_build_id,
-        stream=stream_key(features.get("gh_is_pr"), features.get("gh_pull_req_num"), features.get("git_branch")),
-    )
+    context = stream_context(prior, started_at=now, previous_build_id=previous_build_id, stream=current)
+    if github:
+        context["time_since_last_commit"] = _seconds_since_previous_commit(builds, features)
     json_safe = {key: (None if value != value else float(value)) for key, value in context.items()}
     return {**features, **context}, json_safe
+
+
+def _seconds_since_previous_commit(builds: list[BuildLog], features: dict) -> float:
+    """Seconds from the pipeline's latest earlier commit to this one, by commit date.
+
+    Training computes this over the repository's collected commits, i.e. the
+    commits that triggered runs; here those are the commits of stored builds.
+    Unknown (NaN) without a commit date or an earlier commit.
+    """
+    committed = pd.to_datetime(features.get("committed_at"), errors="coerce", utc=True)
+    if pd.isna(committed):
+        value = pd.to_numeric(pd.Series([features.get("time_since_last_commit")]), errors="coerce").iloc[0]
+        return float(value)
+    earlier = [
+        stamp for build in builds
+        if (raw := build.raw_features or {}).get("head_sha") != features.get("head_sha")
+        and not pd.isna(stamp := pd.to_datetime(raw.get("committed_at"), errors="coerce", utc=True))
+        and stamp <= committed
+    ]
+    return (committed - max(earlier)).total_seconds() if earlier else float("nan")
 
 
 def _prediction_out(prediction: Prediction) -> dict:
@@ -339,7 +372,9 @@ def model_info(predictor: CICDPredictor = Depends(get_predictor)) -> dict:
         "model_name": predictor.best_model_name,
         "training_mode": predictor.preprocessing.get("training_mode"),
         "decision_threshold": predictor.decision_threshold,
+        "input_schema": getattr(predictor, "input_schema", None),
         "holdout_metrics": metadata.get("holdout_metrics"),
+        "new_repository_metrics": metadata.get("new_repository_holdout_metrics"),
     }
 
 

@@ -8,12 +8,11 @@ SUBMIT_BUILD_PAGE = (
 )
 
 
-def test_manual_submit_uses_canonical_file_count_inputs() -> None:
-    """The active form sends canonical raw counts; it never controls a derived total."""
+def test_manual_submit_sends_raw_github_actions_inputs() -> None:
+    """The form sends the run's raw commit counts; the predictor derives totals and flags itself."""
     source = SUBMIT_BUILD_PAGE.read_text(encoding="utf-8")
 
-    assert "gh_diff_files_added" in source
-    assert "gh_diff_files_deleted" in source
-    assert "gh_diff_files_modified" in source
-    assert "git_diff_src_files" not in source
-    assert '"total_files_changed"' not in source
+    for raw in ("additions:", "deletions:", "files_modified:", "num_parents:", "event:", "workflow_id:"):
+        assert raw in source
+    for derived in ("total_churn", "is_merge", "is_pr:", "is_default_branch", "msg_len"):
+        assert derived not in source

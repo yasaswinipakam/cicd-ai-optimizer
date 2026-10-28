@@ -144,11 +144,12 @@ function FinancePilotSection() {
 }
 
 // Within-repository AUC from the Phase-1 reports (0.5 = random ranking).
-// Travis: walk-forward folds 7-10; GitHub Actions: pre-registered external test, folds 6-10.
+// Travis: walk-forward folds 7-10; GitHub Actions: the two pre-registered tests, folds 6-10.
 const MODEL_RESULTS = [
   { set: 'All builds (Travis)', tierC: 0.628, tierE: 0.698 },
   { set: 'New breakages (Travis)', tierC: 0.556, tierE: 0.622 },
-  { set: 'GitHub Actions (external)', tierC: 0.715, tierE: 0.770 },
+  { set: 'GitHub Actions, test 1', tierC: 0.715, tierE: 0.770 },
+  { set: 'GitHub Actions, new repos', tierC: 0.763, tierE: 0.911 },
 ]
 
 function RiskDistribution({ distribution, threshold }) {
@@ -161,7 +162,7 @@ function RiskDistribution({ distribution, threshold }) {
         <XAxis type="number" dataKey="mid" domain={[0, 100]} ticks={[0, 20, 40, 60, 80, 100]} unit="%" {...axisProps} />
         <YAxis allowDecimals={false} {...axisProps} axisLine={false} />
         <Tooltip {...tooltipProps} labelFormatter={(_mid, items) => `Risk ${items?.[0]?.payload.range ?? ''}`} formatter={value => [value, 'Builds']} />
-        {threshold != null && <ReferenceLine x={threshold * 100} stroke="var(--color-ink-muted)" strokeDasharray="4 4" label={{ value: 'alert threshold', position: 'top', fill: 'var(--color-ink-muted)', fontSize: 10 }} />}
+        {threshold != null && <ReferenceLine x={threshold * 100} stroke="var(--color-ink-muted)" strokeDasharray="4 4" label={{ value: 'alert threshold', position: threshold > 0.8 ? 'insideTopRight' : 'top', fill: 'var(--color-ink-muted)', fontSize: 10 }} />}
         <Bar dataKey="count" fill={chartColors.accent} radius={[4, 4, 0, 0]} animationDuration={1100} />
       </BarChart>
     </ResponsiveContainer></ChartInView> : <p className="text-sm text-ink-muted">No scored builds yet.</p>}
@@ -170,11 +171,13 @@ function RiskDistribution({ distribution, threshold }) {
 
 function ModelPerformance({ model }) {
   const holdout = model?.holdout_metrics
+  const newRepository = model?.new_repository_metrics
+  const holdoutData = model?.input_schema === 'github_actions' ? 'GitHub Actions runs' : 'Travis builds'
   return <Panel title="How good is the model?" subtitle="Within-repository ranking quality (AUC); the axis starts at 0.5, which is random.">
     <ChartInView className="h-64"><ResponsiveContainer>
       <BarChart data={MODEL_RESULTS} layout="vertical" margin={{ top: 0, right: 36, left: 8, bottom: 0 }} barGap={2} barSize={12}>
         <CartesianGrid stroke={chartColors.grid} horizontal={false} />
-        <XAxis type="number" domain={[0.5, 0.8]} ticks={[0.5, 0.6, 0.7, 0.8]} {...axisProps} />
+        <XAxis type="number" domain={[0.5, 1]} ticks={[0.5, 0.6, 0.7, 0.8, 0.9, 1]} {...axisProps} />
         <YAxis type="category" dataKey="set" width={150} {...axisProps} axisLine={false} tick={{ ...axisProps.tick, fontSize: 11 }} />
         <Tooltip {...tooltipProps} formatter={value => value.toFixed(3)} />
         <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12 }} formatter={value => <span style={{ color: 'var(--color-ink-muted)' }}>{value}</span>} />
@@ -188,7 +191,10 @@ function ModelPerformance({ model }) {
       {[['Flags', holdout.alert_rate, 'of builds'], ['Precision', holdout.precision_at_threshold, 'of flags fail'], ['Recall', holdout.recall_at_threshold, 'of failures caught']].map(([label, value, note]) =>
         <div key={label}><dt className="label">{label}</dt><dd className="readout mt-1 text-lg">{Math.round(value * 100)}%</dd><dd className="text-xs text-ink-faint">{note}</dd></div>)}
     </dl>}
-    {holdout && <p className="mt-2 text-xs text-ink-faint">Deployed model at its alert threshold, on its held-out data (most recent 10% of Travis builds).</p>}
+    {holdout && <p className="mt-2 text-xs text-ink-faint">
+      Deployed model at its alert threshold, on its held-out data (most recent 10% of {holdoutData}).
+      Within-repo AUC there: {holdout.macro_within_repo_auc.toFixed(2)}{newRepository && <>, or {newRepository.macro_within_repo_auc.toFixed(2)} for a repository it has never seen</>}.
+    </p>}
   </Panel>
 }
 

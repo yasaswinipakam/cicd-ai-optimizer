@@ -36,6 +36,10 @@ ACTIONABLE_INTERVENTION_FIELDS = {
     "gh_diff_files_added": 500.0,
     "gh_diff_files_deleted": 500.0,
     "gh_diff_files_modified": 500.0,
+    # GitHub Actions model inputs (the head commit's size).
+    "additions": 5000.0,
+    "deletions": 5000.0,
+    "files_modified": 500.0,
 }
 
 
@@ -50,6 +54,9 @@ class OptimizationInterventionIn(BaseModel):
         "gh_diff_files_added",
         "gh_diff_files_deleted",
         "gh_diff_files_modified",
+        "additions",
+        "deletions",
+        "files_modified",
     ]
     value: float
     reason: str | None = None
@@ -221,7 +228,9 @@ class ModelInfoOut(BaseModel):
     model_name: str
     training_mode: str | None = None
     decision_threshold: float
+    input_schema: str | None = None  # "github_actions" or "travis": which inputs the model reads
     holdout_metrics: dict[str, float] | None = None
+    new_repository_metrics: dict[str, float] | None = None
 
 
 class RiskBinOut(BaseModel):
