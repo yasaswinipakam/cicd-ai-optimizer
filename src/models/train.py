@@ -26,7 +26,7 @@ from xgboost import XGBClassifier
 from lightgbm import LGBMClassifier
 
 from src.features.availability_guard import assert_features_available_for_prediction
-from src.features.engineer import HISTORY_AUX_COLS, add_rolling_history, engineer_features
+from src.features.engineer import HISTORY_AUX_COLS, add_rolling_history, engineer_features, training_failure_prior
 from src.features.schema import FEATURE_COLS, FEATURE_SOURCE_COLUMNS, HISTORY_FEATURE_COLS
 
 
@@ -73,13 +73,14 @@ def _load_input(data_path: Path) -> pd.DataFrame:
 
 
 def _engineer_split(train_raw: pd.DataFrame, test_raw: pd.DataFrame):
-    """Fit categorical encoders/imputation only on training rows, then transform test."""
+    """Fit encoders, imputation and the cold-start prior only on training rows."""
     encoders: dict = {}
+    prior = training_failure_prior(train_raw, label_col=TARGET_COLUMN)
     train, feature_columns = engineer_features(
-        train_raw, encoders=encoders, fit_encoders=True, save_encoders=False
+        train_raw, encoders=encoders, fit_encoders=True, save_encoders=False, cold_start_prior=prior
     )
     test, transformed_columns = engineer_features(
-        test_raw, encoders=encoders, fit_encoders=False, save_encoders=False
+        test_raw, encoders=encoders, fit_encoders=False, save_encoders=False, cold_start_prior=prior
     )
     if feature_columns != FEATURE_COLS or transformed_columns != FEATURE_COLS:
         raise RuntimeError("Feature engineering did not return the canonical schema.")
@@ -88,7 +89,7 @@ def _engineer_split(train_raw: pd.DataFrame, test_raw: pd.DataFrame):
     x_test = imputer.transform(test[FEATURE_COLS])
     y_train = train[TARGET_COLUMN].eq("failed").astype(int)
     y_test = test[TARGET_COLUMN].eq("failed").astype(int)
-    return x_train, x_test, y_train, y_test, imputer, encoders
+    return x_train, x_test, y_train, y_test, imputer, encoders, prior
 
 
 def _metrics(y_true, probabilities, threshold: float) -> dict[str, float]:
@@ -152,6 +153,7 @@ def _persist_deployable(
     threshold: float,
     threshold_policy: dict,
     metadata: dict,
+    cold_start_prior: float,
     model_name: str = "random_forest",
 ) -> None:
     """Save the artifacts consumed by live inference with schema metadata."""
@@ -163,6 +165,7 @@ def _persist_deployable(
             "imputer": imputer,
             "scaler": scaler,
             "feature_cols": FEATURE_COLS.copy(),
+            "cold_start_prior": cold_start_prior,
             "decision_threshold": threshold,
             "training_mode": mode,
             "threshold_policy": threshold_policy,
@@ -185,7 +188,7 @@ def _fit_fast_models(data_path: Path) -> dict[str, object]:
     train_raw, test_raw = train_test_split(
         raw, test_size=0.2, stratify=target, random_state=RANDOM_STATE
     )
-    x_train, _x_test, y_train, _y_test, imputer, encoders = _engineer_split(train_raw, test_raw)
+    x_train, _x_test, y_train, _y_test, imputer, encoders, prior = _engineer_split(train_raw, test_raw)
     scaler = StandardScaler().fit(x_train)
     class_counts = y_train.value_counts()
     scale_pos_weight = float(class_counts[0] / class_counts[1])
@@ -225,6 +228,7 @@ def _fit_fast_models(data_path: Path) -> dict[str, object]:
         mode="fast", threshold=0.5,
         threshold_policy={"name": "default", "selection_rule": "fast development mode uses 0.50"},
         metadata={"sample_rows": len(raw), "split": "stratified_random", "test_rows": len(test_raw)},
+        cold_start_prior=prior,
     )
     print("Fast mode complete: four comparison models persisted; RF remains the live model.")
     return models
@@ -269,7 +273,7 @@ def _fit_full_temporal(data_path: Path) -> dict[str, object]:
     selection_train_raw = train_raw.iloc[:validation_index].copy()
     validation_raw = train_raw.iloc[validation_index:].copy()
     validation_rows = len(validation_raw)
-    x_selection, x_validation, y_selection, y_validation, _sel_imputer, _sel_encoders = _engineer_split(
+    x_selection, x_validation, y_selection, y_validation, _sel_imputer, _sel_encoders, _sel_prior = _engineer_split(
         selection_train_raw, validation_raw
     )
     selector_model = _random_forest().fit(x_selection, y_selection)
@@ -279,7 +283,7 @@ def _fit_full_temporal(data_path: Path) -> dict[str, object]:
     del selection_train_raw, validation_raw, x_selection, x_validation, y_selection, y_validation, _sel_imputer, _sel_encoders, selector_model
     gc.collect()
 
-    x_train, x_test, y_train, y_test, imputer, encoders = _engineer_split(train_raw, test_raw)
+    x_train, x_test, y_train, y_test, imputer, encoders, prior = _engineer_split(train_raw, test_raw)
     model = _random_forest()
     started = time.perf_counter()
     model.fit(x_train, y_train)
@@ -303,6 +307,7 @@ def _fit_full_temporal(data_path: Path) -> dict[str, object]:
     _persist_deployable(
         model, imputer, scaler, encoders,
         mode="full", threshold=threshold, threshold_policy=policy, metadata=result,
+        cold_start_prior=prior,
     )
     _write_full_report(result)
     print(pd.DataFrame([result]).to_string(index=False))
@@ -363,7 +368,7 @@ def _tune_fast_models(data_path: Path) -> dict[str, object]:
     train_raw, test_raw = train_test_split(
         raw, test_size=0.2, stratify=target, random_state=RANDOM_STATE
     )
-    x_train, x_test, y_train, y_test, imputer, encoders = _engineer_split(train_raw, test_raw)
+    x_train, x_test, y_train, y_test, imputer, encoders, prior = _engineer_split(train_raw, test_raw)
 
     class_counts = y_train.value_counts()
     scale_pos_weight = float(class_counts[0] / class_counts[1])
@@ -382,9 +387,11 @@ def _tune_fast_models(data_path: Path) -> dict[str, object]:
     print(f"  Best RF CV F1:  {rf_search.best_score_:.4f}")
 
     print("Tuning XGBoost (n_iter=25, cv=3, scoring=f1) ...")
+    # Boosters run single-threaded inside the parallel search: nesting OpenMP
+    # pools inside loky workers oversubscribes cores and can deadlock.
     xgb_base = XGBClassifier(
         scale_pos_weight=scale_pos_weight, eval_metric="logloss",
-        random_state=RANDOM_STATE, n_jobs=-1, tree_method="hist",
+        random_state=RANDOM_STATE, n_jobs=1, tree_method="hist",
     )
     xgb_search = RandomizedSearchCV(
         xgb_base, _XGB_PARAM_DIST, n_iter=25, scoring="f1", cv=cv,
@@ -397,7 +404,7 @@ def _tune_fast_models(data_path: Path) -> dict[str, object]:
     print("Tuning LightGBM (n_iter=25, cv=3, scoring=f1) ...")
     lgbm_base = LGBMClassifier(
         scale_pos_weight=scale_pos_weight,
-        random_state=RANDOM_STATE, n_jobs=-1, verbose=-1,
+        random_state=RANDOM_STATE, n_jobs=1, verbose=-1,
     )
     lgbm_search = RandomizedSearchCV(
         lgbm_base, _LGBM_PARAM_DIST, n_iter=25, scoring="f1", cv=cv,
@@ -422,8 +429,8 @@ def _tune_fast_models(data_path: Path) -> dict[str, object]:
     ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
     models: dict[str, object] = {
         "random_forest": rf_search.best_estimator_,
-        "xgboost": xgb_search.best_estimator_,
-        "lightgbm": lgbm_search.best_estimator_,
+        "xgboost": xgb_search.best_estimator_.set_params(n_jobs=-1),
+        "lightgbm": lgbm_search.best_estimator_.set_params(n_jobs=-1),
         "decision_tree": dt,
         "svm": svm,
     }
@@ -445,6 +452,7 @@ def _tune_fast_models(data_path: Path) -> dict[str, object]:
             "lgbm_best_params": lgbm_search.best_params_,
             "lgbm_best_cv_f1": lgbm_search.best_score_,
         },
+        cold_start_prior=prior,
     )
     print("Tune mode complete: best RF, XGBoost, and LightGBM persisted.")
     return models
@@ -480,7 +488,7 @@ def _fit_stacking_models(data_path: Path) -> dict[str, object]:
     train_raw, test_raw = train_test_split(
         raw, test_size=0.2, stratify=target, random_state=RANDOM_STATE
     )
-    x_train, x_test, y_train, y_test, imputer, encoders = _engineer_split(train_raw, test_raw)
+    x_train, x_test, y_train, y_test, imputer, encoders, prior = _engineer_split(train_raw, test_raw)
 
     class_counts = y_train.value_counts()
     scale_pos_weight = float(class_counts[0] / class_counts[1])
@@ -504,7 +512,8 @@ def _fit_stacking_models(data_path: Path) -> dict[str, object]:
         cv=5,
         stack_method="predict_proba",
         passthrough=False,
-        n_jobs=-1,
+        # Base models already use every core; parallel folds would nest OpenMP pools.
+        n_jobs=None,
     )
     started = time.perf_counter()
     print("Fitting StackingClassifier (cv=5, 3 base models + LR meta) ...")
@@ -527,6 +536,7 @@ def _fit_stacking_models(data_path: Path) -> dict[str, object]:
         threshold_policy={"name": "default", "selection_rule": "stack mode uses 0.50"},
         metadata={"sample_rows": len(raw), "split": "stratified_random",
                   "test_f1": test_f1, "test_auc": test_auc},
+        cold_start_prior=prior,
         model_name="stacking",
     )
     print("Stack mode complete: StackingClassifier persisted as live model.")

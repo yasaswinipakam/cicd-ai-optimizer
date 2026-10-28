@@ -4,6 +4,44 @@ This project analyzes CI/CD build data to predict build failures and support pip
 
 ## Current validated model
 
+The deployed failure model is the **Tier E blend** from the Phase-1 study
+(`artifacts/tier_e_blend.joblib`, built by `src.models.train_tier_e`).
+It blends a binary LightGBM with a LightGBM ranker, standardizing each
+model's scores with training-score moments. A global Platt map turns the
+blended score into a probability.
+
+**Inputs.** The model reads the build's change profile plus history for its
+*stream* (the pull request, or the branch for push builds) and its in-flight
+context. In-flight context means builds in the same pipeline that are still
+running. The API derives this history from the pipeline's stored builds.
+Clients send `git_branch`, `gh_is_pr` and `gh_pull_req_num`, and report each
+build's outcome. Only reported outcomes become history; builds awaiting an
+outcome count as running.
+
+**Holdout results.** The deployed model is exactly the walk-forward fold-10
+model: trained on chronological folds 1–9 and tested on fold 10, which it
+reproduces bit for bit. On that holdout:
+
+| Measure | Value |
+|---|---:|
+| Within-repo AUC | 0.690 |
+| Pooled AUC | 0.844 |
+| Prevalence | 18.5% |
+
+The alert threshold is set so that 15% of holdout builds are flagged, a
+review budget chosen without using labels. At that threshold, precision is
+0.71 and recall 0.57. The headline across folds 7–10 is 0.695 within-repo
+AUC, or about 0.62 on new breakages; see
+[`reports/final_results.md`](reports/final_results.md).
+
+**Cold start.** A pipeline with no recorded outcomes scores high. In
+training, a repository's first builds failed about half the time. Record a
+few outcomes before reading the scores.
+
+**Random Forest.** The 39-feature Random Forest below still provides the
+anomaly-detection matrix and the what-if derived features. Rerunning
+`src.models.train --mode full` points `best_model.txt` back at it.
+
 The legacy deployable model is a Random Forest using 34 availability-guarded
 pre-build features. Its prior calibration experiment fitted the model on the
 earliest 72% of the 3.56M job rows and sigmoid/Platt scaling on the following
@@ -33,7 +71,7 @@ Create and activate a Python 3.11 virtual environment, then install the project 
 cd cicd-ai-optimizer
 python3.11 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements.txt -c constraints.txt
 ```
 
 Place `final-2017-01-25_csv.gz` in `data/raw/` when it is available.
@@ -60,6 +98,10 @@ dataset in place, run the following from the project root:
 # Rebuild dependent anomaly artifact after the persisted preprocessing changes.
 .venv/bin/python -m src.models.train_anomaly
 .venv/bin/python -m src.models.train_clustering
+
+# Deploy the Tier E blend (run last: it repoints best_model.txt). It checks that
+# it reproduces the saved research fold-10 predictions in reports/phase1_v2_parts/.
+.venv/bin/python -m src.models.train_tier_e
 ```
 
 `src.models.evaluate` is intended for the `fast` four-model comparison artifacts.

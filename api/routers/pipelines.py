@@ -28,6 +28,7 @@ from api.schemas import (
     ShadowBuildCreatedOut,
     ShadowOutcomeIn,
 )
+from src.features.stream_context import PriorBuild, stream_context, stream_key
 from src.inference.predictor import CICDPredictor
 from api.diagnostics_service import save_job_failure_analysis
 from src.models.suggestions import get_suggestion
@@ -61,6 +62,68 @@ def _find_or_create_pipeline(identifier: str, db: Session, owner: User) -> Pipel
     return pipeline
 
 
+# A shadow build still "running" after this long almost surely never had its
+# outcome reported; counting it as in flight forever would skew the context.
+STALE_PENDING_HOURS = 24
+
+
+def _as_utc(value: datetime) -> datetime:
+    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+
+def _observed_outcome(build: BuildLog) -> tuple[datetime | None, bool | None]:
+    """When this build's real CI outcome became known, and whether it failed.
+
+    Builds submitted without an observed status only store the model's own
+    prediction, which must never be fed back in as history.
+    """
+    raw = build.raw_features or {}
+    if build.build_status not in ("passed", "failed"):
+        return None, None
+    if raw.get("_outcome_recorded_at"):
+        return _as_utc(datetime.fromisoformat(raw["_outcome_recorded_at"])), build.build_status == "failed"
+    if raw.get("_observed_outcome"):
+        return _as_utc(build.timestamp), build.build_status == "failed"
+    return None, None
+
+
+def _with_stream_context(
+    predictor: CICDPredictor, db: Session, pipeline: Pipeline, features: dict, now: datetime
+) -> tuple[dict, dict | None]:
+    """Add Tier E history and in-flight context derived from this pipeline's stored builds.
+
+    The server derives these instead of trusting client-sent values, using
+    the training rules in ``src.features.stream_context``: the stream is the
+    PR (``gh_pull_req_num``) or the branch, outcomes count once reported, and
+    shadow builds awaiting an outcome count as running.
+    """
+    if not getattr(predictor, "uses_stream_context", False):
+        return features, None
+    branch = str(features.get("git_branch") or "")
+    prior, previous_build_id = [], None
+    builds = (
+        db.query(BuildLog).filter(BuildLog.pipeline_id == pipeline.id).order_by(BuildLog.timestamp, BuildLog.id).all()
+    )
+    for build in builds:
+        raw = build.raw_features or {}
+        started = _as_utc(build.timestamp)
+        finished, failed = _observed_outcome(build)
+        if finished is None:
+            awaiting = (raw.get("_prediction_context") or {}).get("shadow_mode") and build.build_status == "pending"
+            if not awaiting or now - started > timedelta(hours=STALE_PENDING_HOURS):
+                continue
+        prior.append(PriorBuild(build.id, started, stream_key(raw.get("gh_is_pr"), raw.get("gh_pull_req_num"), raw.get("git_branch")),
+                                finished, failed))
+        if str(raw.get("git_branch") or "") == branch:
+            previous_build_id = build.id
+    context = stream_context(
+        prior, started_at=now, previous_build_id=previous_build_id,
+        stream=stream_key(features.get("gh_is_pr"), features.get("gh_pull_req_num"), features.get("git_branch")),
+    )
+    json_safe = {key: (None if value != value else float(value)) for key, value in context.items()}
+    return {**features, **context}, json_safe
+
+
 def _prediction_out(prediction: Prediction) -> dict:
     return {
         "failure_probability": prediction.failure_probability,
@@ -84,10 +147,12 @@ def create_build(
 ) -> dict:
     """Analyze, persist, and return one new build for a pipeline."""
     pipeline = _find_or_create_pipeline(pipeline_id, db, current_user)
+    now = datetime.now(timezone.utc)
+    features, context = _with_stream_context(predictor, db, pipeline, payload.build_features, now)
     analysis = (
-        predictor.full_analysis(payload.build_features, payload.failed_test_log, include_explanation=True)
+        predictor.full_analysis(features, payload.failed_test_log, include_explanation=True)
         if explain
-        else predictor.full_analysis(payload.build_features, payload.failed_test_log)
+        else predictor.full_analysis(features, payload.failed_test_log)
     )
     prediction_data = analysis["prediction"]
     anomaly_data = analysis["anomaly"]
@@ -95,11 +160,17 @@ def create_build(
     observed_status = payload.build_status or prediction_data["predicted_status"]
     build_log = BuildLog(
         pipeline_id=pipeline.id,
-        timestamp=datetime.now(timezone.utc),
+        timestamp=now,
         log_content=payload.failed_test_log,
         build_status=observed_status,
         stage_durations=payload.stage_durations,
-        raw_features={**payload.build_features, "_explanation": analysis.get("explanation", [])},
+        raw_features={
+            **payload.build_features,
+            "_explanation": analysis.get("explanation", []),
+            # Only a reported status is a real outcome usable as later history.
+            "_observed_outcome": payload.build_status is not None,
+            "_stream_context": context,
+        },
     )
     db.add(build_log)
     db.flush()
@@ -117,7 +188,8 @@ def create_build(
     db.commit()
     result = _prediction_out(prediction)
     result["explanation"] = analysis.get("explanation") if explain else None
-    result.update({"build_log_id": build_log.id, "pipeline_id": pipeline.id, "pipeline_name": pipeline.name})
+    result.update({"build_log_id": build_log.id, "pipeline_id": pipeline.id, "pipeline_name": pipeline.name,
+                   "stream_context": context})
     return result
 
 
@@ -137,7 +209,9 @@ def create_shadow_build(
     `passed` or `failed` to create an auditable live-evaluation record.
     """
     pipeline = _find_or_create_pipeline(pipeline_id, db, current_user)
-    analysis = predictor.full_analysis(payload.build_features, include_explanation=explain)
+    now = datetime.now(timezone.utc)
+    features, context = _with_stream_context(predictor, db, pipeline, payload.build_features, now)
+    analysis = predictor.full_analysis(features, include_explanation=explain)
     prediction_data = analysis["prediction"]
     anomaly_data = analysis["anomaly"]
     threshold = predictor.decision_threshold
@@ -150,11 +224,11 @@ def create_shadow_build(
         "training_mode": predictor.preprocessing.get("training_mode"),
         "feature_schema": predictor.feature_cols,
         "decision_threshold": threshold,
-        "prediction_created_at": datetime.now(timezone.utc).isoformat(),
+        "prediction_created_at": now.isoformat(),
     }
     build_log = BuildLog(
         pipeline_id=pipeline.id,
-        timestamp=datetime.now(timezone.utc),
+        timestamp=now,
         log_content=None,
         build_status="pending",
         stage_durations={},
@@ -162,6 +236,7 @@ def create_shadow_build(
             **payload.build_features,
             "_explanation": analysis.get("explanation", []),
             "_prediction_context": model_context,
+            "_stream_context": context,
         },
     )
     db.add(build_log)
@@ -191,6 +266,7 @@ def create_shadow_build(
             "training_mode": predictor.preprocessing.get("training_mode"),
             "calibration_method": predictor.calibration_method,
             "calibration_version": predictor.calibrator_artifact_sha256,
+            "stream_context": context,
         }
     )
     return result

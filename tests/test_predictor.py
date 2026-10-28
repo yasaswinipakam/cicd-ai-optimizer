@@ -22,7 +22,7 @@ def test_full_analysis_handles_minimal_and_unseen_live_payload(tmp_path) -> None
     model = DummyClassifier(strategy="constant", constant=1).fit(matrix, [0, 1])
     joblib.dump(model, tmp_path / "random_forest.joblib")
     joblib.dump(
-        {"imputer": imputer, "scaler": scaler, "feature_cols": FEATURE_COLS.copy()},
+        {"imputer": imputer, "scaler": scaler, "feature_cols": FEATURE_COLS.copy(), "cold_start_prior": 0.2},
         tmp_path / "preprocessing.joblib",
     )
     joblib.dump(
@@ -51,6 +51,10 @@ def test_full_analysis_handles_minimal_and_unseen_live_payload(tmp_path) -> None
         }
     )
     assert canonical_counts.loc[0, "total_files_changed"] == 177.0
+    for column in ("repo_fail_rate_last5", "repo_fail_rate_last20", "repo_prior_fail_rate"):
+        assert canonical_counts.loc[0, column] == 0.2
+    supplied = predictor._engineer_single_row({"repo_fail_rate_last5": 0.6})
+    assert supplied.loc[0, "repo_fail_rate_last5"] == 0.6
     result = predictor.full_analysis(
         {"git_diff_src_churn": 50, "gh_lang": "brainfuck", "gh_is_pr": False},
         "database connection timeout",

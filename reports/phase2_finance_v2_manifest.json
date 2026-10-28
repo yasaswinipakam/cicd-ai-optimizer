@@ -1,0 +1,52 @@
+{
+  "study": "phase2_finance_pilot_v2_0",
+  "seed": 20261013,
+  "features_rf": [
+    "log_additions",
+    "log_deletions",
+    "log_total_changes",
+    "log_changed_file_count",
+    "hour_sin",
+    "hour_cos",
+    "dow_sin",
+    "dow_cos",
+    "previous_completed_failure",
+    "last5_completed_failure_rate",
+    "all_prior_completed_failure_rate",
+    "hours_since_completed",
+    "hours_since_failure"
+  ],
+  "features_lgbm": [
+    "log_additions",
+    "log_deletions",
+    "log_total_changes",
+    "log_changed_file_count",
+    "hour_sin",
+    "hour_cos",
+    "dow_sin",
+    "dow_cos",
+    "previous_completed_failure",
+    "last5_completed_failure_rate",
+    "all_prior_completed_failure_rate",
+    "hours_since_completed",
+    "hours_since_failure",
+    "badge_payment_billing",
+    "badge_ledger_accounting",
+    "badge_auth_security",
+    "badge_dependency_ci",
+    "badge_any_finance_criticality"
+  ],
+  "badge_features_added": [
+    "badge_payment_billing",
+    "badge_ledger_accounting",
+    "badge_auth_security",
+    "badge_dependency_ci",
+    "badge_any_finance_criticality"
+  ],
+  "finish_buffer_hours": 0,
+  "rows": 1787,
+  "python": "3.13.9 | packaged by Anaconda, Inc. | (main, Oct 21 2025, 19:11:29) [Clang 20.1.8 ]",
+  "sklearn": "1.7.2",
+  "lightgbm": "4.7.0",
+  "platform": "macOS-26.1-arm64-arm-64bit-Mach-O"
+}

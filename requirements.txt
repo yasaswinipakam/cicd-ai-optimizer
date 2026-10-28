@@ -1,22 +1,27 @@
-pandas
-pyarrow
-numpy
-scikit-learn
-xgboost
-lightgbm
-imbalanced-learn
-matplotlib
-seaborn
-joblib
-fastapi
-uvicorn[standard]
-sqlalchemy
-pydantic
-python-jose[cryptography]
-passlib[bcrypt]
-bcrypt<4.1
-python-multipart
-pytest
-httpx
-reportlab
-shap
+# Direct dependencies, pinned to the versions the deployed artifacts were
+# trained with (Python 3.11). Transitive pins live in constraints.txt:
+#   pip install -r requirements.txt -c constraints.txt
+# Bump versions together, retrain artifacts, then regenerate constraints.txt
+# with `pip freeze > constraints.txt` from that environment.
+pandas==3.1.0
+pyarrow==26.0.0
+numpy==2.4.6
+scikit-learn==1.9.1
+xgboost==3.2.0
+lightgbm==4.7.0
+imbalanced-learn==0.14.2
+matplotlib==3.11.2
+seaborn==0.13.2
+joblib==1.6.0
+fastapi==0.162.0
+uvicorn[standard]==0.54.0
+sqlalchemy==2.1.6
+pydantic==2.14.1
+python-jose[cryptography]==3.5.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
+python-multipart==0.0.32
+pytest==9.1.1
+httpx==0.28.1
+reportlab==5.1.0
+shap==0.51.0
