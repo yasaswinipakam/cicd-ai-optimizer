@@ -203,6 +203,7 @@ const formatDay = ms => new Date(ms).toLocaleDateString([], { month: 'short', da
 
 // Daily average predicted risk (area) with the actual failure rate where outcomes were reported (line).
 const MIN_DAYS_FOR_DAILY = 3
+const MAX_DOTTED_POINTS = 60
 const toPercent = value => (value == null ? null : +(value * 100).toFixed(1))
 
 async function loadTrend() {
@@ -226,6 +227,8 @@ function FailureTrend() {
     ? `Fewer than ${MIN_DAYS_FOR_DAILY} days of builds so far, so each build is shown in order: its predicted risk, and the failure rate of reported outcomes up to that build.`
     : `Last ${TREND_DAYS} days: average predicted risk per day, and the actual failure rate on days with reported outcomes.`
   const names = byBuild ? { risk: 'Predicted risk', rate: 'Failure rate so far' } : { risk: 'Average predicted risk', rate: 'Actual failure rate' }
+  // Dots help on a short series; on a long one they hide the line.
+  const showDots = (trend?.points?.length ?? 0) <= MAX_DOTTED_POINTS
   return <Panel className="mt-6 animate-rise [animation-delay:240ms]" title="Failure rate trend" subtitle={subtitle}>
     {trend.points.length ? <ChartInView className="h-72"><ResponsiveContainer>
       <ComposedChart data={trend.points} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
@@ -237,8 +240,8 @@ function FailureTrend() {
         <YAxis domain={[0, 100]} unit="%" {...axisProps} axisLine={false} />
         <Tooltip {...tooltipProps} labelFormatter={(_x, items) => items?.[0]?.payload.when ?? ''} formatter={(value, name, item) => [value == null ? '—' : `${value}%`, name === 'risk' ? (byBuild ? names.risk : `${names.risk} (${item.payload.scored} builds)`) : `${names.rate} (${item.payload.reported} reported)`]} />
         <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12 }} formatter={name => <span style={{ color: 'var(--color-ink-muted)' }}>{names[name]}</span>} />
-        <Area type="monotone" dataKey="risk" stroke={chartColors.accent} strokeWidth={2} fill="url(#trendFill)" connectNulls animationDuration={1800} animationEasing="ease-out" activeDot={{ r: 5, fill: chartColors.accent, stroke: 'var(--color-canvas)', strokeWidth: 2 }} dot={{ r: 3, fill: chartColors.accent, stroke: 'var(--color-canvas)', strokeWidth: 2 }} />
-        <Line type="monotone" dataKey="rate" stroke={chartColors.accent2} strokeWidth={2} connectNulls animationBegin={300} animationDuration={1800} animationEasing="ease-out" dot={{ r: 4, fill: chartColors.accent2, stroke: 'var(--color-canvas)', strokeWidth: 2 }} activeDot={{ r: 6 }} />
+        <Area type="monotone" dataKey="risk" stroke={chartColors.accent} strokeWidth={2} fill="url(#trendFill)" connectNulls animationDuration={1800} animationEasing="ease-out" activeDot={{ r: 5, fill: chartColors.accent, stroke: 'var(--color-canvas)', strokeWidth: 2 }} dot={showDots && { r: 3, fill: chartColors.accent, stroke: 'var(--color-canvas)', strokeWidth: 2 }} />
+        <Line type="monotone" dataKey="rate" stroke={chartColors.accent2} strokeWidth={2} connectNulls animationBegin={300} animationDuration={1800} animationEasing="ease-out" dot={showDots && { r: 4, fill: chartColors.accent2, stroke: 'var(--color-canvas)', strokeWidth: 2 }} activeDot={{ r: 6 }} />
       </ComposedChart>
     </ResponsiveContainer></ChartInView> : <p className="text-sm text-ink-muted">No scored builds in the last {TREND_DAYS} days.</p>}
   </Panel>

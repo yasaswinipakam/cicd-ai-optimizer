@@ -1,55 +1,55 @@
 # 5–10 Minute Viva Demo Script
 
-## Pre-demo checklist (must be complete before the presentation)
+Use the public demo, or run it locally.
 
-1. Confirm `data/raw/final-2017-01-25_csv.gz`, `data/processed/clean.parquet`, and
-   the frozen artifacts are present. Do **not** retrain for the presentation.
-2. Confirm `reports/final_results.md` contains the current held-out Random Forest
-   F1 of 0.4300 and AUC of 0.6902, and `reports/figures/` contains the generated PNGs.
-3. Create `.env` from `.env.example` with real, non-placeholder secrets.
-4. Start Docker Desktop, then run `docker compose up --build`.
-5. In another terminal export the same `GITHUB_WEBHOOK_SECRET` and prepare the
-   simulator command below. Open http://localhost:5173.
+**Run it locally:**
 
-## Walkthrough (target: 7 minutes)
+```bash
+cd dashboard && VITE_API_BASE_URL=/api npm run build && cd ..
+DATABASE_URL=sqlite:///./tmp/demo.db .venv/bin/python -m api.db.init_db
+DATABASE_URL=sqlite:///./tmp/demo.db .venv/bin/python scripts/seed_demo.py
+DEMO_READ_ONLY=1 DATABASE_URL=sqlite:///./tmp/demo.db .venv/bin/uvicorn api.demo:app --port 8000
+```
 
-1. **0:00–0:45 — architecture and startup.** Show `docker compose up --build`
-   and point out the API and dashboard services. Explain that GitHub Actions and
-   Jenkins webhooks feed the data-collection layer.
-2. **0:45–1:30 — dashboard.** Open the Dashboard page and show the live summary
-   cards and failure-rate trend.
-3. **1:30–2:30 — streaming CI data.** Run:
+**About the data.** The demo holds 450 real GitHub Actions runs from three
+public repositories. They come from the model's holdout window, so every score
+shown is out-of-sample.
 
-   ```bash
-   .venv/bin/python scripts/simulate_ci_traffic.py --count 5 --endpoint github-actions
-   ```
+## Walkthrough (about 7 minutes)
 
-   Refresh the dashboard and show totals/trend data increasing. Mention the
-   webhook secret guards this unauthenticated machine-to-machine endpoint.
-4. **2:30–3:30 — pipeline detail.** Open Pipelines, choose a failed build, and
-   explain predicted failure probability, the unusual pre-build input-profile
-   flag (not a failure prediction), and post-hoc root-cause label. Clarify that
-   test-log clustering is diagnostic after a failure, not a predictive feature.
-5. **3:30–4:30 — explanation and recommendation.** Show the persisted local SHAP
-   chart, the failed-build recommendation, and the downloadable PDF. Explain that
-   SHAP attributes this model score; it does not prove causal effects.
-6. **4:30–5:20 — manual prediction.** Use Submit Build with source churn and the
-   canonical added/deleted/modified file counts. Show the returned probability and
-   the new persisted build entry.
-7. **5:20–6:10 — What-If and optimization.** Open What-If, change one raw input,
-   then run one optimization simulation. Show baseline versus simulated risk and
-   read the non-causal disclaimer.
-8. **6:10–6:40 — model evidence.** Open `reports/figures/model_comparison.png`,
-   precision-recall curves, and feature-importance charts. Quote only the exact
-   metrics in `reports/final_results.md`; explain why its best-F1 model was chosen.
-9. **6:40–7:00 — traceability and safeguards.** Open `reports/traceability.md`.
-   Highlight the explicit exclusion of `tr_log_*` from pre-build prediction and
-   the items marked N, if any remain.
+1. **0:00–1:00 — the claim.** Open the README's "Results at a glance" table.
+   - Tier E beat Tier C on Travis and on two pre-registered GitHub Actions
+     tests: 0.911 vs 0.763 within-repository AUC on 30 new repositories.
+   - Explain "pre-registered": the protocol was hashed before the data was
+     collected.
+2. **1:00–2:00 — dashboard.** Walk through:
+   - the failure trend;
+   - the risk distribution ("each repository flags its riskiest 15%");
+   - the model panel with its holdout numbers.
+3. **2:00–3:30 — a repository.** Open Pipelines, then `yt-dlp/yt-dlp`.
+   - Show the risk-over-time chart: the dots are real outcomes, and the dashed
+     line is this repository's alert threshold.
+   - Open one build's "Why" chart. Point out that history on the same branch or
+     PR, and whether the previous run of this workflow failed, dominate.
+4. **3:30–4:30 — how it runs live.** Explain the webhook:
+   - GitHub sends `workflow_run` *requested*, and the run is scored before it
+     executes;
+   - *completed* attaches the real outcome, which becomes history;
+   - nothing blocks CI.
+   - Mention that the live history is tested equal to the training pass.
+5. **4:30–5:30 — Submit.** Score a run on `yt-dlp/yt-dlp` with the head
+   branch of a failing stream.
+   - Show the history panel and the repository's threshold.
+   - In the demo it is scored, not saved.
+6. **5:30–6:30 — What-if.** Toggle "previous run on this branch failed" and
+   watch the risk move.
+   - Run one optimization simulation and read the non-causal disclaimer.
+7. **6:30–7:00 — what's next.** Explain the forward-looking test: the deployed
+   model and alert rule are frozen by hash and will be scored on October 2026
+   runs in late November (`reports/phase2_prospective_protocol.md`).
 
-## Timing record
+## Before presenting
 
-This script has been reviewed for sequence and prerequisites, but it has **not
-been timed end-to-end** in this workspace because Docker runtime access remains
-unavailable. The real dataset and frozen model artifacts are present. Perform one
-timed rehearsal after the pre-demo checklist; record the duration here before
-presenting.
+- Open the demo once a few minutes ahead. The free hosting plan sleeps when
+  idle, and the first load takes about a minute.
+- Time one rehearsal and record it here.

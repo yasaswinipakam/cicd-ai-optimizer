@@ -1,0 +1,14 @@
+# Keep the Docker build context small; the images need only source, small data and artifacts.
+.git
+.venv
+.venv-broken
+**/node_modules
+**/__pycache__
+dashboard/dist
+data/raw
+data/processed
+runs
+tmp
+reports/*_parts
+*.db
+.env

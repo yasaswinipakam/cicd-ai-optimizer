@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session, joinedload
 
 from api.db.database import get_db
+from api.demo_mode import read_only
 from api.db.models import BuildLog, JobFailureAnalysis, JobRun, Pipeline, Prediction, WorkflowRun
 from api.schemas import (
     BuildCreatedOut,
@@ -28,7 +29,6 @@ from api.schemas import (
     OperationalDashboardOut,
     PipelineOut,
     RiskDistributionOut,
-    RootCauseSummaryOut,
     ShadowBuildCreatedOut,
     ShadowOutcomeIn,
 )
@@ -248,12 +248,16 @@ def create_build(
         root_cause_label=root_cause.get("likely_cause"),
     )
     db.add(prediction)
-    db.commit()
+    db.flush()
     result = _prediction_out(prediction)
     result["explanation"] = analysis.get("explanation") if explain else None
     result.update({"build_log_id": build_log.id, "pipeline_id": pipeline.id, "pipeline_name": pipeline.name,
                    "stream_context": context, "decision_threshold": threshold, "alert_basis": basis,
                    "is_alert": prediction_data["failure_probability"] >= threshold})
+    if read_only():
+        db.rollback()  # the public demo scores against stored history but keeps nothing
+    else:
+        db.commit()
     return result
 
 

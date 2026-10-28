@@ -1,0 +1,45 @@
+# Public, read-only demo: one container serving the API under /api and the
+# built dashboard at /, seeded at build time with real GitHub Actions runs
+# replayed through the webhook (scripts/seed_demo.py). Build from the repo root:
+#   docker build -f docker/Dockerfile.demo -t cicd-demo .
+
+FROM node:20-alpine AS dashboard
+WORKDIR /dashboard
+COPY dashboard/package.json dashboard/package-lock.json ./
+RUN npm ci
+COPY dashboard ./
+RUN VITE_API_BASE_URL=/api npm run build
+
+FROM python:3.11-slim
+WORKDIR /app
+# LightGBM needs the OpenMP runtime.
+RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 && rm -rf /var/lib/apt/lists/*
+COPY requirements.txt constraints.txt ./
+RUN pip install --no-cache-dir -r requirements.txt -c constraints.txt
+
+# Model artifacts are not in git; they come from a GitHub release and must match
+# these checksums (the first is the model frozen by reports/phase2_prospective_protocol.md).
+ARG MODEL_RELEASE=https://github.com/yasaswinipakam/cicd-ai-optimizer/releases/download/demo-model-v1
+RUN mkdir -p artifacts && python -c "import hashlib, sys, urllib.request; \
+expected = {'tier_e_gha_blend.joblib': '57c26f170b6dae23c92a268c672663fc5243dc049aa8135374fdf3fabcb12860', \
+'preprocessing.joblib': 'b82d0452d3ab271ab80d938562faec8c7877ccda7ab4c07045e6bdf08d113c6a', \
+'encoders.joblib': 'bde3424455523d8919a069348c0ed1f6dd21196c4ce2edfdf541afa1a466d04e', \
+'anomaly_detector.joblib': '32f302a5725eedebac1f078826ac1422402f42ec91aad2a568221961be2e0c2c', \
+'root_cause_clusterer.joblib': '34e32cff1b4c948586ad3b6b01c8e31adbb4118b9ff2eb2a5ba5c6cf82046817'}; \
+[urllib.request.urlretrieve(f'$MODEL_RELEASE/{name}', f'artifacts/{name}') for name in expected]; \
+bad = [n for n, h in expected.items() if hashlib.sha256(open(f'artifacts/{n}', 'rb').read()).hexdigest() != h]; \
+sys.exit(f'checksum mismatch: {bad}' if bad else 0)"
+
+COPY src ./src
+COPY api ./api
+COPY scripts/seed_demo.py ./scripts/
+COPY data/demo ./data/demo
+COPY reports/feature_availability_registry.json ./reports/
+COPY artifacts/best_model.txt ./artifacts/
+COPY --from=dashboard /dashboard/dist ./dashboard/dist
+
+ENV DATABASE_URL=sqlite:////app/demo.db DEMO_READ_ONLY=1
+RUN python -m api.db.init_db && python scripts/seed_demo.py
+
+EXPOSE 8000
+CMD ["sh", "-c", "uvicorn api.demo:app --host 0.0.0.0 --port ${PORT:-8000}"]
