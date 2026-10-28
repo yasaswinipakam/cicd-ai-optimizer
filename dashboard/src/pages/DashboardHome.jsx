@@ -1,19 +1,22 @@
 import { useEffect, useState } from 'react'
-import { Bar, BarChart, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import client from '../api/client'
+import { Loading, PageHeader, Panel, ScrambleText, StatCard as Card } from '../components/ui'
+import { axisProps, chartColors, tooltipProps } from '../theme/chart'
 // Saved dev-test predictions; copied from reports/phase2_finance_fineract_risk_board.json.
 import RISK_BOARD from '../data/fineractRiskBoard.json'
 
-const Card = ({ label, value }) => <div className="rounded-lg bg-white p-4 shadow-sm"><p className="text-sm text-slate-500">{label}</p><p className="mt-1 text-2xl font-semibold">{value}</p></div>
+const RankedList = ({ items, empty, render }) => items.length ? <ul className="divide-y divide-line">{items.map(render)}</ul> : <p className="text-sm text-ink-muted">{empty}</p>
 
-const FINANCE_COHORT = [
+/* ── Finance pilot static data ── */
+const COHORT = [
   { repo: 'apache/fineract',         desc: 'Core banking, loans, microfinance', suites: 1457, prevalence: '49%', span: '253 days', eligible: true,  reason: null },
   { repo: 'actualbudget/actual',     desc: 'Personal budgeting app',            suites: 2186, prevalence: '19%', span:  '90 days', eligible: false, reason: 'Needs 180-day span — recheck in 3 months' },
   { repo: 'killbill/killbill',       desc: 'Subscription billing platform',     suites:  210, prevalence: '36%', span: '390 days', eligible: false, reason: 'Needs 500+ commit suites' },
   { repo: 'firefly-iii/firefly-iii', desc: 'Personal finance tracker',          suites:   66, prevalence: '18%', span: '142 days', eligible: false, reason: 'Needs 500+ commit suites' },
 ]
 
-const FOLD_DATA = [
+const FOLDS = [
   { fold: 'F6',  rf: 0.579, hist: 0.627 },
   { fold: 'F7',  rf: 0.494, hist: 0.466 },
   { fold: 'F8',  rf: 0.442, hist: 0.477 },
@@ -21,151 +24,128 @@ const FOLD_DATA = [
   { fold: 'F10', rf: 0.557, hist: 0.672 },
 ]
 
-const badgeColors = {
-  'payment/billing':   'bg-red-50 text-red-700',
-  'ledger/accounting': 'bg-sky-50 text-sky-700',
-  'auth/security':     'bg-amber-50 text-amber-700',
-  'dep/ci':            'bg-slate-100 text-slate-600',
+const BADGE_CLASS = {
+  'payment/billing':   'border-danger/25 bg-danger/10 text-danger',
+  'ledger/accounting': 'border-accent/25 bg-accent/10 text-accent',
+  'auth/security':     'border-warn/25 bg-warn/10 text-warn',
+  'dep/ci':            'border-line-strong bg-raised text-ink-muted',
 }
-
-const outcomeStyle = {
-  failed: 'bg-red-50 text-red-700',
-  passed: 'bg-green-50 text-green-700',
-}
+const OUTCOME_CHIP = { failed: 'chip-danger', passed: 'chip-success' }
 
 const pct = x => `${Math.round(x * 100)}%`
 
 function FinancePilotSection() {
   const [open, setOpen] = useState(true)
+  const budget = [
+    ['Changes flagged', RISK_BOARD.budget_15pct],
+    ['Actually failed', RISK_BOARD.failures_in_budget],
+    ['Precision', pct(RISK_BOARD.precision_in_budget)],
+    ['Base rate', pct(RISK_BOARD.prevalence)],
+    ['Lift', `${RISK_BOARD.lift_at_15.toFixed(2)}×`],
+    ['Max possible lift', `${RISK_BOARD.max_possible_lift.toFixed(2)}×`],
+  ]
   return (
-    <section className="mt-6">
-      <div className="flex items-start justify-between gap-3 mb-3">
+    <section className="mt-10">
+      <div className="mb-4 flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <h2 className="font-semibold">Finance software pilot</h2>
-          <p className="text-sm text-slate-500">External-validity test on 4 open-source finance repositories · Apache Fineract (only eligible repo)</p>
+          <h2 className="text-2xl text-ink"><ScrambleText text="Finance software pilot" /></h2>
+          <p className="mt-1 text-sm text-ink-muted">External-validity test on 4 open-source finance repositories. Only Apache Fineract met eligibility thresholds.</p>
         </div>
-        <button onClick={() => setOpen(o => !o)} className="flex-shrink-0 whitespace-nowrap rounded px-3 py-1.5 text-sm bg-slate-100 hover:bg-slate-200 text-slate-600">
-          {open ? 'Collapse ▲' : 'Expand ▼'}
+        <button onClick={() => setOpen(o => !o)} className="btn btn-ghost btn-sm mt-1 shrink-0 whitespace-nowrap">
+          {open ? 'Collapse ↑' : 'Expand ↓'}
         </button>
       </div>
 
       {open && <>
-        {/* Key metric cards */}
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-4">
-          <div className="rounded-lg bg-white p-4 shadow-sm">
-            <p className="text-sm text-slate-500">Eligible repositories</p>
-            <p className="mt-1 text-2xl font-semibold">1 <span className="text-base font-normal text-slate-400">of 4</span></p>
-          </div>
-          <div className="rounded-lg bg-white p-4 shadow-sm">
-            <p className="text-sm text-slate-500">Dev-test AUC (RF, v1.2)</p>
-            <p className="mt-1 text-2xl font-semibold text-amber-600">0.549</p>
-            <p className="text-xs text-slate-400">95% CI 0.48–0.61 · weak</p>
-          </div>
-          <div className="rounded-lg bg-white p-4 shadow-sm">
-            <p className="text-sm text-slate-500">Lift at 15% budget</p>
-            <p className="mt-1 text-2xl font-semibold text-amber-600">1.38×</p>
-            <p className="text-xs text-slate-400">95% CI 1.04–1.71</p>
-          </div>
-          <div className="rounded-lg bg-white p-4 shadow-sm">
-            <p className="text-sm text-slate-500">Failure prevalence</p>
-            <p className="mt-1 text-2xl font-semibold text-slate-700">41%</p>
-            <p className="text-xs text-slate-400">120 of 292 test changes failed</p>
-          </div>
+        {/* Summary cards */}
+        <div className="stagger grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+          <Card label="Eligible repos" value="1 of 4" />
+          <Card label="Dev-test AUC (RF, v1.2)" value="0.549" note="95% CI 0.48–0.61 · weak" />
+          <Card label="Lift at 15% budget" value="1.38×" note="95% CI 1.04–1.71" />
+          <Card label="Failure prevalence" value="41%" note="120 of 292 test changes failed" />
         </div>
 
         {/* Label-correction callout */}
-        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          <span className="font-semibold">Corrected labels (v1.2). </span>
-          56% of runs recorded as failures never executed (expired PR approvals), so the earlier below-chance result was largely a labelling artifact. On clean data the model is weak and unstable: dev-test AUC 0.45–0.55 depending on the finish buffer, with 292 test changes over 10 weeks. Same-branch history is a promising lead in online folds but not confirmed.
+        <div className="mt-4 flex animate-rise items-start gap-3 rounded-control border border-warn/30 bg-warn/8 px-4 py-3 text-sm text-warn [animation-delay:200ms]">
+          <span className="mt-px shrink-0 text-base leading-none">⚠</span>
+          <span><strong className="font-semibold">Corrected labels (v1.2).</strong> 56% of runs recorded as failures never executed (expired PR approvals), so the earlier below-chance result was largely a labelling artifact. On clean data the model is weak and unstable: dev-test AUC 0.45–0.55 depending on the finish buffer, with 292 test changes over 10 weeks. Same-branch history is a promising lead in online folds but not confirmed.</span>
         </div>
 
-        <div className="grid gap-4 lg:grid-cols-2">
-          {/* Cohort table */}
-          <div className="rounded-lg bg-white p-5 shadow-sm">
-            <h3 className="mb-3 font-semibold">Cohort eligibility</h3>
-            <ul className="divide-y text-sm">
-              {FINANCE_COHORT.map(r => (
-                <li key={r.repo} className="py-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <span className="font-medium font-mono text-xs break-words">{r.repo}</span>
-                      <p className="text-slate-500 text-xs mt-0.5">{r.desc}</p>
-                      <p className="text-xs text-slate-400 mt-0.5">{r.suites.toLocaleString()} suites · {r.prevalence} fail · {r.span}</p>
-                      {!r.eligible && r.reason && <p className="text-slate-400 text-xs mt-0.5 italic">{r.reason}</p>}
-                    </div>
-                    {r.eligible
-                      ? <span className="flex-shrink-0 whitespace-nowrap rounded bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">Eligible</span>
-                      : <span className="flex-shrink-0 whitespace-nowrap rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-500">Not yet</span>}
+        {/* Cohort list + fold chart */}
+        <div className="stagger mt-4 grid gap-4 lg:grid-cols-2">
+          <Panel title="Cohort eligibility">
+            <ul className="divide-y divide-line">
+              {COHORT.map(r => (
+                <li key={r.repo} className="flex items-start justify-between gap-3 py-3">
+                  <div className="min-w-0">
+                    <p className="font-mono text-xs break-words text-ink">{r.repo}</p>
+                    <p className="mt-0.5 text-xs text-ink-muted">{r.desc}</p>
+                    <p className="mt-0.5 font-mono text-xs text-ink-faint">{r.suites.toLocaleString()} suites · {r.prevalence} fail · {r.span}</p>
+                    {r.reason && <p className="mt-0.5 text-xs text-ink-faint italic">{r.reason}</p>}
                   </div>
+                  {r.eligible
+                    ? <span className="chip chip-success shrink-0">eligible</span>
+                    : <span className="chip chip-neutral shrink-0">not yet</span>}
                 </li>
               ))}
             </ul>
-          </div>
+          </Panel>
 
-          {/* Online folds chart */}
-          <div className="rounded-lg bg-white p-5 shadow-sm">
-            <h3 className="mb-1 font-semibold">Fineract online folds — AUC</h3>
-            <p className="text-xs text-slate-400 mb-2">RF (v1.2, protocol) vs RF + same-branch history (v1.2, pre-specified). Random baseline = 0.5. Macro: RF 0.523, + branch history 0.586 (online folds only; not confirmed on the final test).</p>
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-3 text-xs text-slate-500">
-              <span className="flex items-center gap-1"><span className="inline-block h-2 w-3 rounded-sm bg-slate-300" />RF (v1.2, protocol)</span>
-              <span className="flex items-center gap-1"><span className="inline-block h-2 w-3 rounded-sm bg-sky-600" />RF + same-branch history (pre-specified)</span>
+          <Panel title="Fineract online folds — AUC" subtitle="RF (v1.2, protocol) vs RF + same-branch history (v1.2, pre-specified). Random baseline = 0.5. Macro: RF 0.523, + branch history 0.586 (online folds only; not confirmed on the final test).">
+            <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-muted">
+              <span className="flex items-center gap-1.5"><span className="inline-block h-2 w-3 rounded-sm" style={{background:'var(--color-ink-faint)'}} />RF (v1.2, protocol)</span>
+              <span className="flex items-center gap-1.5"><span className="inline-block h-2 w-3 rounded-sm" style={{background:'var(--color-accent)'}} />RF + same-branch history (pre-specified)</span>
             </div>
             <div className="h-44">
               <ResponsiveContainer>
-                <BarChart data={FOLD_DATA} barSize={14} barGap={2}>
-                  <XAxis dataKey="fold" tick={{ fontSize: 12 }} />
-                  <YAxis domain={[0, 0.7]} tick={{ fontSize: 11 }} tickFormatter={v => v.toFixed(1)} />
-                  <Tooltip formatter={(v) => v.toFixed(3)} />
-                  <Bar dataKey="rf" name="RF" radius={[2, 2, 0, 0]} fill="#94a3b8" />
-                  <Bar dataKey="hist" name="RF + branch history" radius={[2, 2, 0, 0]} fill="#0369a1" />
+                <BarChart data={FOLDS} barSize={16} barGap={2} margin={{ top: 8, right: 4, left: -18, bottom: 0 }}>
+                  <CartesianGrid stroke={chartColors.grid} vertical={false} />
+                  <XAxis dataKey="fold" {...axisProps} />
+                  <YAxis domain={[0, 0.7]} {...axisProps} tickFormatter={v => v.toFixed(1)} />
+                  <Tooltip {...tooltipProps} formatter={v => v.toFixed(3)} />
+                  <Bar dataKey="rf" name="RF" radius={[2, 2, 0, 0]} fill="var(--color-ink-faint)" />
+                  <Bar dataKey="hist" name="RF + branch history" radius={[2, 2, 0, 0]} fill={chartColors.accent} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
-          </div>
+          </Panel>
         </div>
 
         {/* Top-ranked changes from the saved dev-test predictions */}
-        <div className="mt-4 rounded-lg bg-white p-5 shadow-sm">
-          <h3 className="mb-1 font-semibold">Top-ranked changes — Apache Fineract (v1.2 dev test, Aug 11 – Oct 14 2026)</h3>
-          <p className="text-xs text-slate-400 mb-3">
-            The {RISK_BOARD.top_ranked.length} highest-scoring of {RISK_BOARD.n} test-window changes, scored by RF with protocol features (badges descriptive only), with what actually happened. Badges show the finance code areas each change touched.
-          </p>
+        <Panel className="mt-4" title="Top-ranked changes — Apache Fineract (v1.2 dev test, Aug 11 – Oct 14 2026)" subtitle={`The ${RISK_BOARD.top_ranked.length} highest-scoring of ${RISK_BOARD.n} test-window changes, scored by RF with protocol features (badges descriptive only), with what actually happened. Badges show the finance code areas each change touched.`}>
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_16rem]">
-            <ul className="divide-y">
+            <ul className="divide-y divide-line">
               {RISK_BOARD.top_ranked.map(c => (
                 <li key={c.sha} className="flex items-start gap-3 py-3">
                   <div className="min-w-0 flex-1">
-                    <p className="font-mono text-sm font-medium">{c.sha}</p>
-                    <p className="mt-0.5 text-xs text-slate-400">{c.trigger_time} · {c.files} files changed</p>
+                    <p className="font-mono text-sm text-ink">{c.sha}</p>
+                    <p className="mt-0.5 text-xs text-ink-faint tabular-nums">{c.trigger_time} · {c.files} files changed</p>
                     {c.badges.length > 0 && (
-                      <div className="mt-1.5 flex flex-wrap gap-1">
+                      <div className="mt-1.5 flex flex-wrap gap-1.5">
                         {c.badges.map(b => (
-                          <span key={b} className={`rounded px-1.5 py-0.5 font-mono text-xs ${badgeColors[b] ?? 'bg-slate-100 text-slate-600'}`}>{b}</span>
+                          <span key={b} className={`chip text-[11px] ${BADGE_CLASS[b] ?? 'chip-neutral'}`}>{b}</span>
                         ))}
                       </div>
                     )}
                   </div>
-                  <div className="flex flex-shrink-0 flex-col items-end gap-1">
-                    <span className="font-mono text-sm font-semibold text-slate-500">{c.score.toFixed(3)}</span>
-                    <span className={`whitespace-nowrap rounded px-2 py-0.5 text-xs font-medium ${outcomeStyle[c.actual] ?? 'bg-slate-100 text-slate-600'}`}>{c.actual}</span>
+                  <div className="flex shrink-0 flex-col items-end gap-1.5">
+                    <span className="readout text-sm text-ink-muted">{c.score.toFixed(3)}</span>
+                    <span className={`chip ${OUTCOME_CHIP[c.actual] ?? 'chip-neutral'}`}>{c.actual}</span>
                   </div>
                 </li>
               ))}
             </ul>
-            <div className="self-start rounded-lg bg-slate-50 p-4 text-sm">
-              <p className="font-medium">Review budget: top 15%</p>
-              <dl className="mt-2 space-y-1.5 text-slate-600">
-                <div className="flex justify-between gap-3"><dt>Changes flagged</dt><dd className="font-mono">{RISK_BOARD.budget_15pct}</dd></div>
-                <div className="flex justify-between gap-3"><dt>Actually failed</dt><dd className="font-mono">{RISK_BOARD.failures_in_budget}</dd></div>
-                <div className="flex justify-between gap-3"><dt>Precision</dt><dd className="font-mono">{pct(RISK_BOARD.precision_in_budget)}</dd></div>
-                <div className="flex justify-between gap-3"><dt>Base rate</dt><dd className="font-mono">{pct(RISK_BOARD.prevalence)}</dd></div>
-                <div className="flex justify-between gap-3"><dt>Lift</dt><dd className="font-mono">{RISK_BOARD.lift_at_15.toFixed(2)}×</dd></div>
-                <div className="flex justify-between gap-3"><dt>Max possible lift</dt><dd className="font-mono">{RISK_BOARD.max_possible_lift.toFixed(2)}×</dd></div>
+            <div className="inset-panel self-start p-4 text-sm">
+              <p className="font-medium text-ink">Review budget: top 15%</p>
+              <dl className="mt-3 space-y-1.5">
+                {budget.map(([label, value]) => (
+                  <div key={label} className="flex justify-between gap-3"><dt className="text-ink-muted">{label}</dt><dd className="readout">{value}</dd></div>
+                ))}
               </dl>
-              <p className="mt-3 text-xs text-slate-500">{pct(RISK_BOARD.precision_in_budget)} of flagged changes failed against a {pct(RISK_BOARD.prevalence)} base rate (lift {RISK_BOARD.lift_at_15.toFixed(2)}×, 95% CI {RISK_BOARD.lift_ci[0].toFixed(2)}–{RISK_BOARD.lift_ci[1].toFixed(2)}): weak, not yet reliable.</p>
+              <p className="mt-3 text-xs text-ink-muted">{pct(RISK_BOARD.precision_in_budget)} of flagged changes failed against a {pct(RISK_BOARD.prevalence)} base rate (lift {RISK_BOARD.lift_at_15.toFixed(2)}×, 95% CI {RISK_BOARD.lift_ci[0].toFixed(2)}–{RISK_BOARD.lift_ci[1].toFixed(2)}): weak, not yet reliable.</p>
             </div>
           </div>
-        </div>
+        </Panel>
       </>}
     </section>
   )
@@ -174,6 +154,6 @@ function FinancePilotSection() {
 export default function DashboardHome() {
   const [summary, setSummary] = useState(null); const [trends, setTrends] = useState([]); const [operational, setOperational] = useState(null); const [error, setError] = useState('')
   useEffect(() => { Promise.all([client.get('/dashboard/summary'), client.get('/dashboard/failure-trends?days=30'), client.get('/dashboard/operational-summary')]).then(([s, t, o]) => { setSummary(s.data); setTrends(t.data.map(x => ({ ...x, rate: +(x.failure_rate * 100).toFixed(1) }))); setOperational(o.data) }).catch(() => setError('Unable to load dashboard data. Please sign in again.')) }, [])
-  if (error) return <p className="text-red-600">{error}</p>; if (!summary) return <p>Loading dashboard…</p>
-  return <><h1 className="mb-5 text-2xl font-bold">Dashboard</h1><section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"><Card label="Builds analyzed" value={summary.total_builds_analyzed} /><Card label="Failure rate" value={`${(summary.overall_failure_rate * 100).toFixed(1)}%`} /><Card label="Anomalies detected" value={summary.anomalies_detected} /><Card label="Pipelines monitored" value={summary.pipelines_monitored} /></section><section className="mt-6 rounded-lg bg-white p-5 shadow-sm"><h2 className="mb-4 font-semibold">Failure rate trend</h2><div className="h-72"><ResponsiveContainer><LineChart data={trends}><XAxis dataKey="date" /><YAxis unit="%" /><Tooltip /><Line type="monotone" dataKey="rate" name="Failure rate" stroke="#0369a1" strokeWidth={2} /></LineChart></ResponsiveContainer></div></section><section className="mt-6"><div className="mb-3"><h2 className="font-semibold">Runtime bottlenecks and failure diagnostics</h2><p className="text-sm text-slate-500">Post-execution telemetry; it is not used for pre-build risk prediction.</p></div>{operational && <><div className="grid gap-4 sm:grid-cols-3"><Card label="Jobs observed" value={operational.total_jobs_observed} /><Card label="Bottlenecks / stalled" value={`${operational.bottlenecks_detected} / ${operational.stalled_jobs_detected}`} /><Card label="Failed jobs with logs" value={operational.failed_jobs_with_captured_logs} /></div><div className="mt-4 grid gap-4 lg:grid-cols-2"><div className="rounded-lg bg-white p-5 shadow-sm"><h3 className="mb-3 font-semibold">Slowest or recurrent bottlenecked jobs</h3>{operational.top_slowest_or_bottlenecked_jobs.length ? <ul className="divide-y">{operational.top_slowest_or_bottlenecked_jobs.map(job => <li key={job.job_name} className="flex flex-col gap-0.5 py-3 sm:flex-row sm:items-baseline sm:justify-between sm:gap-3"><span className="min-w-0 break-words">{job.job_name}</span><span className="shrink-0 whitespace-nowrap text-sm text-slate-600 sm:text-right">{job.bottleneck_or_stall_count} flagged · {job.average_duration_seconds == null ? '—' : `${Math.round(job.average_duration_seconds)}s avg`}</span></li>)}</ul> : <p className="text-slate-500">No job telemetry yet.</p>}</div><div className="rounded-lg bg-white p-5 shadow-sm"><h3 className="mb-3 font-semibold">Top structured failure categories</h3>{operational.top_failure_categories.length ? <ul className="divide-y">{operational.top_failure_categories.map(category => <li key={category.category} className="flex justify-between gap-3 py-3"><span>{category.title}</span><span className="font-medium">{category.count}</span></li>)}</ul> : <p className="text-slate-500">No captured failed-job logs yet.</p>}</div></div></>}</section><section className="mt-6 rounded-lg bg-white p-5 shadow-sm"><h2 className="mb-3 font-semibold">Top root causes</h2>{summary.top_root_causes.length ? <ul className="divide-y">{summary.top_root_causes.map(c => <li key={`${c.cluster_id}-${c.label}`} className="flex justify-between py-3"><span>{c.label || `Cluster ${c.cluster_id}`}</span><span className="font-medium">{c.count}</span></li>)}</ul> : <p className="text-slate-500">No root-cause data yet.</p>}</section><FinancePilotSection /></>
+  if (error) return <p className="rounded-control border border-danger/30 bg-danger/10 p-4 text-danger" role="alert">{error}</p>; if (!summary) return <Loading>Loading dashboard…</Loading>
+  return <><PageHeader title="Dashboard">Build health and failure risk across monitored pipelines.</PageHeader><section className="stagger grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4"><Card label="Builds analyzed" value={summary.total_builds_analyzed} /><Card label="Failure rate" value={`${(summary.overall_failure_rate * 100).toFixed(1)}%`} /><Card label="Anomalies detected" value={summary.anomalies_detected} /><Card label="Pipelines monitored" value={summary.pipelines_monitored} /></section><Panel className="mt-6 animate-rise [animation-delay:240ms]" title="Failure rate trend">{trends.length ? <div className="h-72"><ResponsiveContainer><AreaChart data={trends} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}><defs><linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={chartColors.accent} stopOpacity={0.18} /><stop offset="100%" stopColor={chartColors.accent} stopOpacity={0} /></linearGradient></defs><CartesianGrid stroke={chartColors.grid} vertical={false} /><XAxis dataKey="date" {...axisProps} minTickGap={24} /><YAxis unit="%" {...axisProps} axisLine={false} /><Tooltip {...tooltipProps} /><Area type="monotone" animationDuration={1400} animationEasing="ease-out" dataKey="rate" name="Failure rate" stroke={chartColors.accent} strokeWidth={2} fill="url(#trendFill)" activeDot={{ r: 4, fill: chartColors.accent, stroke: 'var(--color-canvas)', strokeWidth: 2 }} /></AreaChart></ResponsiveContainer></div> : <p className="text-sm text-ink-muted">No builds in the last 30 days.</p>}</Panel><section className="mt-10"><div className="mb-4"><h2 className="text-2xl text-ink"><ScrambleText text="Runtime bottlenecks and failure diagnostics" /></h2><p className="mt-1 text-sm text-ink-muted">Post-execution telemetry; it is not used for pre-build risk prediction.</p></div>{operational && <><div className="stagger grid gap-4 sm:grid-cols-3"><Card label="Jobs observed" value={operational.total_jobs_observed} /><Card label="Bottlenecks / stalled" value={`${operational.bottlenecks_detected} / ${operational.stalled_jobs_detected}`} /><Card label="Failed jobs with logs" value={operational.failed_jobs_with_captured_logs} /></div><div className="stagger mt-4 grid gap-4 lg:grid-cols-2"><Panel title="Slowest or recurrent bottlenecked jobs"><RankedList items={operational.top_slowest_or_bottlenecked_jobs} empty="No job telemetry yet." render={job => <li key={job.job_name} className="flex flex-col gap-0.5 py-3 sm:flex-row sm:items-baseline sm:justify-between sm:gap-3"><span className="min-w-0 font-mono text-sm break-words">{job.job_name}</span><span className="shrink-0 font-mono text-xs whitespace-nowrap text-ink-muted sm:text-right">{job.bottleneck_or_stall_count} flagged · {job.average_duration_seconds == null ? '—' : `${Math.round(job.average_duration_seconds)}s avg`}</span></li>} /></Panel><Panel title="Top structured failure categories"><RankedList items={operational.top_failure_categories} empty="No captured failed-job logs yet." render={category => <li key={category.category} className="flex justify-between gap-3 py-3"><span>{category.title}</span><span className="stat">{category.count}</span></li>} /></Panel></div></>}</section><Panel className="mt-6" title="Top root causes"><RankedList items={summary.top_root_causes} empty="No root-cause data yet." render={c => <li key={`${c.cluster_id}-${c.label}`} className="flex justify-between gap-3 py-3"><span>{c.label || `Cluster ${c.cluster_id}`}</span><span className="stat">{c.count}</span></li>} /></Panel><FinancePilotSection /></>
 }
