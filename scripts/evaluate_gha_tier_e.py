@@ -1,11 +1,20 @@
 """External test of the frozen Tier E recipe on GitHub Actions runs.
 
 Implements reports/phase1_v2_gha_tier_e_protocol.md exactly; that file's
-SHA-256 is recorded in the manifest.  GHA columns are renamed to the Travis
-names so the unmodified Travis history, model and metric code is reused.
+SHA-256 is recorded in the manifest. The confirmation test reruns the same
+analysis on other input files:
+
+    python scripts/evaluate_gha_tier_e.py                       # first GHA test
+    python scripts/evaluate_gha_tier_e.py --tag gha_confirmation \
+        --raw data/raw/phase2_gha_confirm/gha_confirmation_dataset.csv \
+        --protocol reports/phase1_v2_gha_confirmation_protocol.md
+
+GHA columns are renamed to the Travis names so the unmodified Travis history,
+model and metric code is reused.
 """
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import sys
@@ -24,11 +33,21 @@ from src.models.phase1_rigor_evaluation import (  # noqa: E402
 )
 
 REPORTS = ROOT / "reports"
+RAW_FILES = [GHA_RAW]
 PROTOCOL = REPORTS / "phase1_v2_gha_tier_e_protocol.md"
-PARTS = REPORTS / "phase1_v2_gha_tier_e_parts"
-RESULTS = REPORTS / "phase1_v2_gha_tier_e_results.csv"
-DELTAS = REPORTS / "phase1_v2_gha_tier_e_vs_c.csv"
-MANIFEST = REPORTS / "phase1_v2_gha_tier_e_manifest.json"
+
+
+def configure(tag: str, raw: list[Path], protocol: Path) -> None:
+    """Point inputs and outputs at one evaluation (default: the first GHA test)."""
+    global RAW_FILES, PROTOCOL, PARTS, RESULTS, DELTAS, MANIFEST
+    RAW_FILES, PROTOCOL = raw, protocol
+    PARTS = REPORTS / f"phase1_v2_{tag}_parts"
+    RESULTS = REPORTS / f"phase1_v2_{tag}_results.csv"
+    DELTAS = REPORTS / f"phase1_v2_{tag}_vs_c.csv"
+    MANIFEST = REPORTS / f"phase1_v2_{tag}_manifest.json"
+
+
+configure("gha_tier_e", RAW_FILES, PROTOCOL)
 MAX_RUN_DAYS = 35
 FOLDS = range(6, 11)
 BASE_NUM = ["additions", "deletions", "total_churn", "files_modified", "msg_len", "is_merge", "num_parents",
@@ -51,9 +70,11 @@ def load_runs(label_policy: str) -> tuple[pd.DataFrame, dict]:
     columns = ["run_id", "repo", "workflow_id", "created_at", "updated_at", "conclusion", "run_attempt", "event",
                "head_branch", "actor_login", "head_sha", "duration", "additions", "deletions", "total_churn",
                "files_modified", "msg_len", "is_merge", "num_parents", "time_since_last_commit"]
-    raw = pd.read_csv(GHA_RAW, usecols=columns, low_memory=False)
+    raw = pd.concat([pd.read_csv(path, usecols=columns, low_memory=False) for path in RAW_FILES], ignore_index=True)
     for c in ("created_at", "updated_at"):
-        raw[c] = pd.to_datetime(raw[c], utc=True, errors="coerce")
+        # Explicit ISO 8601: the input files write "+00:00" and "Z" offsets, and an inferred
+        # format would turn every value of the other style into NaT when files are combined.
+        raw[c] = pd.to_datetime(raw[c], utc=True, errors="coerce", format="ISO8601")
     d = raw.loc[raw.run_attempt.eq(1) & raw.event.isin(["push", "pull_request"])
                 & raw.conclusion.isin(["success", "failure", "startup_failure"])
                 & raw.workflow_id.notna() & raw.created_at.notna() & raw.updated_at.notna()].copy()
@@ -215,8 +236,15 @@ def verdict(deltas: pd.DataFrame) -> dict:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--tag", default="gha_tier_e", help="output name: reports/phase1_v2_<tag>_*")
+    parser.add_argument("--raw", type=Path, action="append", help="input CSV(s); default: the first GHA dataset")
+    parser.add_argument("--protocol", type=Path, default=PROTOCOL)
+    args = parser.parse_args()
+    configure(args.tag, args.raw or [GHA_RAW], args.protocol)
     PARTS.mkdir(exist_ok=True)
     manifest = {"protocol": PROTOCOL.name, "protocol_sha256": hashlib.sha256(PROTOCOL.read_bytes()).hexdigest(),
+                "inputs": [str(path) for path in RAW_FILES],
                 "settings": {f"{k[0]}_{k[1]}h": list(v) for k, v in SETTINGS.items()}, "data": {}}
     preds = []
     for policy in ("primary", "valid_only"):

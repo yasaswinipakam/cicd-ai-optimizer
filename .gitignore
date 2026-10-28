@@ -25,10 +25,11 @@ tmp/
 *.log
 runs/
 reports/phase1_v2_parts/
-reports/phase1_v2_gha_tier_e_parts/
+reports/phase1_v2_gha_*_parts/
 data/raw/phase2_finance_v1/
 data/raw/phase2_finance_v1_commits/
 data/raw/phase2_finance_v1_jobs/
+data/raw/phase2_gha_confirm/
 
 # OS clutter
 .DS_Store
