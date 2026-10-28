@@ -11,7 +11,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from api.db.database import Base, get_db
-from api.db.models import BuildLog, JobFailureAnalysis, JobRun, JobStepRun, Pipeline, ProviderWorkflowOutcome, WorkflowRun
+from api.db.models import BuildLog, JobFailureAnalysis, JobRun, JobStepRun, ProviderWorkflowOutcome, WorkflowRun
 from api.main import app
 from api.routers.pipelines import get_predictor
 

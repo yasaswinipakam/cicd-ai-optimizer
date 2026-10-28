@@ -1,6 +1,5 @@
 """Authenticated build and dashboard endpoint tests."""
 
-from datetime import datetime, timezone
 
 import pytest
 from fastapi.testclient import TestClient

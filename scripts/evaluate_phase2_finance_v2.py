@@ -13,7 +13,6 @@ import argparse
 import json
 import platform
 import sys
-import time
 from pathlib import Path
 
 import lightgbm as lgb
@@ -25,7 +24,6 @@ from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import average_precision_score, brier_score_loss, f1_score, precision_score, recall_score, roc_auc_score
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "data" / "processed" / "phase2_finance_v1_annotated_suites.parquet"
@@ -54,7 +52,7 @@ def top_metrics(y: np.ndarray, p: np.ndarray, budget: float) -> tuple[float, flo
 
 
 def ece(y: np.ndarray, p: np.ndarray, bins: int = 10) -> float:
-    edges = np.linspace(0, 1, bins + 1); total = len(y); value = 0.0
+    edges = np.linspace(0, 1, bins + 1); value = 0.0
     for lo, hi in zip(edges[:-1], edges[1:]):
         mask = (p >= lo) & ((p < hi) if hi < 1 else (p <= hi))
         if mask.any(): value += mask.mean() * abs(float(y[mask].mean()) - float(p[mask].mean()))

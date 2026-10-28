@@ -489,68 +489,6 @@ def calibrate(train: pd.DataFrame, val: pd.DataFrame, test: pd.DataFrame, numeri
     return base, calibrator, chosen, threshold, pt, float(brier_score_loss(val.target_failed,pv2)), float(val.target_failed.mean())
 
 
-def evaluate_travis() -> tuple[pd.DataFrame, pd.DataFrame, dict]:
-    data, unit = load_travis_builds()
-    data = add_safe_history(data)
-    n = len(data); train_end=int(n*.72); val_end=int(n*.80)
-    train, val, test = data.iloc[:train_end], data.iloc[train_end:val_end], data.iloc[val_end:]
-    rows=[]; prediction_sets=[]; calibration_info={}
-    # Headline tiers, no test-driven selection.  Majority/logistic/RF all report
-    # at their predeclared 0.5 decision threshold; RF additionally is calibrated.
-    for tier in ("A","B","C"):
-        numeric,categorical=tier_features(tier)
-        for kind in ("majority","logistic","rf"):
-            m=pipeline(kind,numeric,categorical).fit(train[numeric+categorical],train.target_failed)
-            p=m.predict_proba(test[numeric+categorical])[:,1]
-            r=metric_row(test.target_failed,p,.5,kind,tier,"final_20pct_development_test")
-            pred=pd.DataFrame({"repo":test.gh_project_name,"y":test.target_failed,"p":p})
-            r.update(cluster_ci(pred,r)); rows.append(r); prediction_sets.append((tier,kind,pred,r))
-        # calibration is reported only for the RF tier, selected solely by validation Brier.
-        _m,_c,chosen,threshold,p,brier_val,prev_val=calibrate(train,val,test,numeric,categorical)
-        r=metric_row(test.target_failed,p,threshold,"rf_calibrated",tier,"final_20pct_development_test")
-        r.update({"calibrator":chosen,"validation_brier":brier_val,"validation_constant_brier":prev_val*(1-prev_val),"validation_brier_skill":1-brier_val/(prev_val*(1-prev_val))})
-        pred=pd.DataFrame({"repo":test.gh_project_name,"y":test.target_failed,"p":p}); r.update(cluster_ci(pred,r)); rows.append(r); prediction_sets.append((tier,"rf_calibrated",pred,r))
-        calibration_info[tier]={"chosen_by_validation_brier":chosen,"threshold":threshold,"validation_brier":brier_val,"validation_prevalence":prev_val}
-    # History-only baselines are reconstructed, not raw linkage encodings.
-    for feature, name in [("hist_prev_failed","previous_status_reconstructed"),("hist_repo_fail_rate_5","last_5_failure_rate")]:
-        p=test[feature].fillna(train.target_failed.mean()).to_numpy(float)
-        r=metric_row(test.target_failed,p,.5,name,"C","final_20pct_development_test")
-        pred=pd.DataFrame({"repo":test.gh_project_name,"y":test.target_failed,"p":p}); r.update(cluster_ci(pred,r)); rows.append(r)
-    # Five expanding windows: folds 6..10, train all earlier folds.  Tier A RF.
-    folds=np.array_split(np.arange(n),10)
-    numeric,categorical=tier_features("A")
-    for j in range(5,10):
-        tr=data.iloc[np.concatenate(folds[:j])]; te=data.iloc[folds[j]]
-        m=pipeline("rf",numeric,categorical).fit(tr[numeric+categorical],tr.target_failed)
-        p=m.predict_proba(te[numeric+categorical])[:,1]
-        r=metric_row(te.target_failed,p,.5,"rf","A",f"walk_forward_fold_{j+1}")
-        r.update(cluster_ci(pd.DataFrame({"repo":te.gh_project_name,"y":te.target_failed,"p":p}),r)); rows.append(r)
-    # Per-project online evaluation: >=20 total failures; report all valid folds.
-    proj=[]
-    numeric,categorical=tier_features("A")
-    eligible=data.groupby("gh_project_name").target_failed.agg(["size","sum"]).query("sum >= 20").index
-    for repo in eligible:
-        d=data.loc[data.gh_project_name.eq(repo)].sort_values("gh_build_started_at",kind="mergesort").reset_index(drop=True)
-        folds=np.array_split(np.arange(len(d)),10); aucs=[]; f1s=[]; tested=0
-        for j in range(5,10):
-            tr,te=d.iloc[np.concatenate(folds[:j])],d.iloc[folds[j]]
-            if tr.target_failed.sum()==0 or te.target_failed.sum()==0: continue
-            m=pipeline("rf",numeric,categorical).fit(tr[numeric+categorical],tr.target_failed); p=m.predict_proba(te[numeric+categorical])[:,1]
-            aucs.append(roc_auc_score(te.target_failed,p)); f1s.append(metric_row(te.target_failed,p,.5,"rf","A","x")["f1"]); tested+=1
-        proj.append({"repository":repo,"builds":len(d),"failures":int(d.target_failed.sum()),"prevalence":float(d.target_failed.mean()),"eligible":True,"valid_test_folds":tested,"mean_auc":np.mean(aucs) if aucs else np.nan,"mean_f1":np.mean(f1s) if f1s else np.nan})
-    # Within-repository AUC on final test, based on headline A calibrated output.
-    headline=next(p for t,k,p,r in prediction_sets if t=="A" and k=="rf_calibrated")
-    within=[]
-    for repo,d in headline.groupby("repo"):
-        if d.y.nunique()==2: within.append(roc_auc_score(d.y,d.p))
-    calibration_info["within_repo_auc_macro_final_test"] = float(np.mean(within))
-    return pd.DataFrame(rows), pd.DataFrame(proj), {**unit, "calibration":calibration_info, "history_note":"committer fail history unavailable: no committer identifier in processed Travis data", "prev_status_raw_categories": sorted(data.git_prev_commit_resolution_status.dropna().astype(str).unique().tolist())}
-
-
-GHA_NUM = ["run_number", "msg_len", "is_merge", "num_parents", "additions", "deletions", "total_churn", "files_modified", "time_since_last_commit", "hour", "day_of_week", "month", "is_weekend", "is_night"]
-GHA_CAT = ["event", "head_branch"]
-
-
 def load_gha(first_attempt_only: bool) -> pd.DataFrame:
     raw_numeric=[column for column in GHA_NUM if column not in {"hour","day_of_week","month","is_weekend","is_night"}]
     columns = ["run_id", "repo", "workflow_id", "created_at", "conclusion", "run_attempt", *raw_numeric, *GHA_CAT]
@@ -564,28 +502,6 @@ def load_gha(first_attempt_only: bool) -> pd.DataFrame:
     d["hour"] = d.created_at.dt.hour; d["day_of_week"] = d.created_at.dt.dayofweek; d["month"] = d.created_at.dt.month
     d["is_weekend"] = d.day_of_week.isin([5,6]).astype(int); d["is_night"] = d.hour.between(0,5).astype(int)
     return d.sort_values(["created_at","run_id"],kind="mergesort").reset_index(drop=True)
-
-
-def evaluate_gha() -> tuple[pd.DataFrame, pd.DataFrame]:
-    rows=[]; lroo=[]
-    for first in (True,False):
-        d=load_gha(first); cut=int(len(d)*.8); train,test=d.iloc[:cut],d.iloc[cut:]
-        tag="first_attempt_only" if first else "all_attempts_sensitivity"
-        for kind in ("majority","logistic","rf"):
-            m=pipeline(kind,GHA_NUM,GHA_CAT).fit(train[GHA_NUM+GHA_CAT],train.target_failed); p=m.predict_proba(test[GHA_NUM+GHA_CAT])[:,1]
-            r=metric_row(test.target_failed,p,.5,kind,"GHA",f"gha_{tag}_temporal_80_20"); r["dataset"]="gha"; r.update(cluster_ci(pd.DataFrame({"repo":test.repo,"y":test.target_failed,"p":p}),r)); rows.append(r)
-        # All eligible GHA repositories: >=200 later rows and >=15 later failures, fixed pre-fit rule.
-        eligible=test.groupby("repo").target_failed.agg(builds="size",failures="sum").query("builds >= 200 and failures >= 15")
-        excluded=test.groupby("repo").target_failed.agg(builds="size",failures="sum").reset_index().assign(eligible=lambda x:(x.builds>=200)&(x.failures>=15))
-        excluded.to_csv(REPORTS/f"phase1_v2_gha_{tag}_holdout_eligibility.csv",index=False)
-        for repo in eligible.index:
-            tr=train.loc[train.repo.ne(repo)]; te=test.loc[test.repo.eq(repo)]
-            m=pipeline("rf",GHA_NUM,GHA_CAT).fit(tr[GHA_NUM+GHA_CAT],tr.target_failed); p=m.predict_proba(te[GHA_NUM+GHA_CAT])[:,1]
-            r=metric_row(te.target_failed,p,.5,"rf","GHA",f"gha_loro_{tag}"); r["dataset"]="gha"; r["repository"]=repo; r["eligibility_rule"]="later test builds >=200 and failures >=15"; lroo.append(r)
-    return pd.DataFrame(rows),pd.DataFrame(lroo)
-
-
-PARTS = REPORTS / "phase1_v2_parts"
 
 
 def _record_skip(unit: str, reason: str, finish_buffer_hours: int) -> None:

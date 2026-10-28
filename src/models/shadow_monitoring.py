@@ -14,7 +14,7 @@ import pandas as pd
 from sqlalchemy.orm import joinedload
 
 from api.db.database import SessionLocal
-from api.db.models import BuildLog, Pipeline
+from api.db.models import BuildLog
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]

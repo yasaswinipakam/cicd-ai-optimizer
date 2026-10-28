@@ -13,7 +13,6 @@ from src.features.availability_guard import assert_features_available_for_predic
 from src.models.anomaly import AnomalyDetector
 from src.models.clustering import RootCauseClusterer
 from src.models.suggestions import get_suggestion
-from src.inference.explainer import PredictionExplainer
 from src.inference.calibration import ProbabilityCalibrator
 from src.features.engineer import HISTORY_COLS, STREAK_COLS
 from src.features.schema import DIRECT_PREBUILD_FEATURE_COLS
@@ -73,7 +72,7 @@ class CICDPredictor:
             assert_features_available_for_prediction(self.feature_cols)
         else:
             self.feature_cols = self.anomaly_feature_cols
-        self._explainer: PredictionExplainer | None = None
+        self._explainer = None  # PredictionExplainer, created on first random-forest explanation
 
     @property
     def uses_stream_context(self) -> bool:
@@ -316,6 +315,8 @@ class CICDPredictor:
             explanation = self._tier_e_explanation(build_features)
         elif include_explanation:
             if self._explainer is None:
+                # Imported here: SHAP costs ~100 MB and only the random-forest path uses it.
+                from src.inference.explainer import PredictionExplainer
                 self._explainer = PredictionExplainer(self.model, self.feature_cols)
             explanation = self._explainer.explain(self._prepared_features(build_features))
         return {
