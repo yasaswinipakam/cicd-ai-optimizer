@@ -188,3 +188,19 @@ def test_requested_runs_are_scored_and_completed_runs_become_history(client: Tes
     builds = {b["id"]: b["build_status"] for b in client.get("/pipelines/acme/api/builds").json()}
     assert builds[first["build_log_id"]] == "failed" and builds[second["build_log_id"]] == "cancelled"
     assert client.get("/model").json()["input_schema"] == "github_actions"
+
+
+def test_runs_are_timed_by_githubs_creation_time_not_delivery(client: TestClient) -> None:
+    start = datetime.now(timezone.utc) - timedelta(days=2)
+    at = lambda hours: (start + timedelta(hours=hours)).isoformat()
+    first = _send(client, "requested", id=21, head_sha="d1", created_at=at(0))
+    _send(client, "completed", id=21, conclusion="failure", created_at=at(0), updated_at=at(0.5))
+    second = _context(client, _send(client, "requested", id=22, head_sha="d2", created_at=at(2))["build_log_id"])
+    # Two hours apart by GitHub's clock, although delivered moments apart.
+    assert second["ctx_hours_since_stream_start"] == pytest.approx(2) and second["ctx_repo_started_1h"] == 0
+    assert second["hist_stream_prev_failed"] == 1
+    # Delivered last but created first: runs that started after it are not its history or in flight.
+    late = _context(client, _send(client, "requested", id=23, head_sha="d3", created_at=at(-1))["build_log_id"])
+    assert late["hist_stream_completed"] == 0 and late["ctx_repo_pending"] == 0
+    builds = {b["id"]: b["timestamp"] for b in client.get("/pipelines/acme/api/builds").json()}
+    assert builds[first["build_log_id"]].startswith(start.strftime("%Y-%m-%dT%H"))

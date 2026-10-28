@@ -225,7 +225,7 @@ function FailureTrend() {
   const byBuild = trend.mode === 'build'
   const subtitle = byBuild
     ? `Fewer than ${MIN_DAYS_FOR_DAILY} days of builds so far, so each build is shown in order: its predicted risk, and the failure rate of reported outcomes up to that build.`
-    : `Last ${TREND_DAYS} days: average predicted risk per day, and the actual failure rate on days with reported outcomes.`
+    : `Up to ${TREND_DAYS} days to the latest build: average predicted risk per day, and the actual failure rate on days with reported outcomes.`
   const names = byBuild ? { risk: 'Predicted risk', rate: 'Failure rate so far' } : { risk: 'Average predicted risk', rate: 'Actual failure rate' }
   // Dots help on a short series; on a long one they hide the line.
   const showDots = (trend?.points?.length ?? 0) <= MAX_DOTTED_POINTS

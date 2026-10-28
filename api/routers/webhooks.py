@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from api.db.database import get_db
 from api.db.models import BuildLog, JobRun, JobStepRun, Pipeline, ProviderWorkflowOutcome, WorkflowRun
 from api.diagnostics_service import save_job_failure_analysis
-from api.routers.pipelines import _find_or_create_pipeline, create_build, create_shadow_build, get_predictor
+from api.routers.pipelines import _find_or_create_pipeline, create_build, get_predictor, record_shadow_prediction
 from api.schemas import BuildFeaturesIn, GitHubJobLogCollectorIn, GitHubJobTelemetryCollectorIn, JobFailureAnalysisOut
 from src.inference.predictor import CICDPredictor
 from src.models.bottleneck import assess_job_timing
@@ -325,8 +325,8 @@ async def _score_github_workflow_run(payload: dict[str, Any], db: Session, predi
     if existing is not None:
         return {"accepted": True, "duplicate": True, "build_log_id": existing.id, "pipeline": pipeline.name}
     features = {**_github_run_features(run), **await _fetch_commit(pipeline_name, run.get("head_sha"))}
-    result = create_shadow_build(pipeline_id=pipeline_name, payload=BuildFeaturesIn(build_features=features),
-                                 explain=True, db=db, predictor=predictor)
+    result = record_shadow_prediction(pipeline_name, BuildFeaturesIn(build_features=features), True, db, predictor,
+                                      started_at=_parse_provider_time(run.get("created_at")))
     return {"accepted": True, "duplicate": False, "build_log_id": result["build_log_id"], "pipeline": pipeline.name,
             "failure_probability": result["failure_probability"], "is_alert": result["is_alert"]}
 

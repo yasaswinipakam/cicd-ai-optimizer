@@ -1,5 +1,6 @@
-"""Authenticated build and dashboard endpoint tests."""
+"""Build and dashboard endpoint tests."""
 
+from datetime import datetime, timezone
 
 import pytest
 from fastapi.testclient import TestClient
@@ -8,6 +9,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from api.db.database import Base, get_db
+from api.db.models import BuildLog
 from api.main import app
 from api.routers.pipelines import get_predictor
 
@@ -217,3 +219,16 @@ def test_alerts_follow_each_pipelines_review_budget(client: TestClient) -> None:
     # Another pipeline's history does not move this one's bar.
     assert client.post("/pipelines/other-repo/builds", json={"risk": 0.25}).json()["is_alert"] is False
     assert client.get("/pipelines/missing/alert-threshold").status_code == 404
+
+
+def test_trend_window_ends_at_the_newest_build(client: TestClient) -> None:
+    client.post("/pipelines/old-repo/builds", json={"build_features": {"gh_lang": "ruby"}, "build_status": "failed"})
+    db = next(app.dependency_overrides[get_db]())
+    try:
+        build = db.query(BuildLog).one()
+        build.timestamp = datetime(2025, 1, 15, 12, tzinfo=timezone.utc)
+        db.commit()
+    finally:
+        db.close()
+    # A year-old pipeline still shows its last activity.
+    assert [day["date"] for day in client.get("/dashboard/failure-trends?days=30").json()] == ["2025-01-15"]

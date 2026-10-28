@@ -48,7 +48,7 @@ def main() -> None:
         branch = run.head_branch if run.head_branch in DEFAULT_BRANCHES else alias(run.repo, "branch", run.head_branch)
         payload = {
             "id": int(run.run_id), "workflow_id": int(run.workflow_id), "name": "CI", "event": run.event,
-            "head_branch": branch, "head_sha": run.head_sha, "run_attempt": 1,
+            "head_branch": branch, "head_sha": run.head_sha, "run_attempt": 1, "created_at": run.created_at.isoformat(),
             "actor": {"login": alias(run.repo, "dev", run.actor_login)},
         }
         # What the API would fetch from the commits API (see api/routers/webhooks._fetch_commit).
@@ -56,7 +56,8 @@ def main() -> None:
                  "files_modified": int(run.files_modified), "num_parents": int(run.num_parents),
                  "msg_len": int(run.msg_len), "committed_at": run.committed_date.isoformat()}
         events.append((run.created_at, 0, {"repository": run.repo, "action": "requested", "run": payload, "commit": stats}))
-        events.append((run.updated_at, 1, {"repository": run.repo, "action": "completed", "run": payload,
+        events.append((run.updated_at, 1, {"repository": run.repo, "action": "completed",
+                                           "run": {**payload, "updated_at": run.updated_at.isoformat()},
                                            "conclusion": run.conclusion}))
     events.sort(key=lambda item: (item[0], item[1], item[2]["run"]["id"]))
     OUT.parent.mkdir(parents=True, exist_ok=True)

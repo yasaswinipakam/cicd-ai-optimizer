@@ -10,6 +10,7 @@ import tempfile
 
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 from api.db.database import get_db
@@ -126,6 +127,8 @@ def _with_stream_context(
     for build in builds:
         raw = build.raw_features or {}
         started = _as_utc(build.timestamp)
+        if started > now:
+            continue  # stored earlier but started later (a late webhook delivery)
         finished, failed = _observed_outcome(build)
         if finished is None:
             awaiting = (raw.get("_prediction_context") or {}).get("shadow_mode") and build.build_status == "pending"
@@ -275,8 +278,20 @@ def create_shadow_build(
     alter any CI build. Use the outcome endpoint after the CI provider reports
     `passed` or `failed` to create an auditable live-evaluation record.
     """
+    return record_shadow_prediction(pipeline_id, payload, explain, db, predictor)
+
+
+def record_shadow_prediction(
+    pipeline_id: str, payload: BuildFeaturesIn, explain: bool, db: Session, predictor: CICDPredictor,
+    started_at: datetime | None = None,
+) -> dict:
+    """Score and store a shadow build that started at ``started_at`` (default: now).
+
+    The GitHub webhook passes the run's own creation time, as training does, so
+    history and in-flight context do not depend on when the event arrived.
+    """
     pipeline = _find_or_create_pipeline(pipeline_id, db)
-    now = datetime.now(timezone.utc)
+    now = min(_as_utc(started_at), datetime.now(timezone.utc)) if started_at else datetime.now(timezone.utc)
     features, context = _with_stream_context(predictor, db, pipeline, payload.build_features, now)
     threshold, basis, _ = _alert_threshold(predictor, db, pipeline)
     analysis = predictor.full_analysis(features, include_explanation=explain)
@@ -753,8 +768,12 @@ def failure_trends(
     ``build``: one point per scored build in time order, with its predicted
     risk and the running failure rate of reported outcomes so far; useful
     while there are too few days for a daily trend.
+
+    The window is the ``days`` up to the newest build: on a live system that is
+    today, and a quiet or archived pipeline still shows its last activity.
     """
-    since = datetime.now(timezone.utc) - timedelta(days=days)
+    newest = db.query(func.max(BuildLog.timestamp)).scalar()
+    since = (_as_utc(newest) if newest else datetime.now(timezone.utc)) - timedelta(days=days)
     logs = (
         db.query(BuildLog).options(joinedload(BuildLog.predictions))
         .filter(BuildLog.timestamp >= since).order_by(BuildLog.timestamp, BuildLog.id).all()
