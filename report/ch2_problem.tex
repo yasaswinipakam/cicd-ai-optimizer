@@ -1,0 +1,31 @@
+\chapter{Problem Statement}
+\label{ch:problem}
+
+\section{Problem Statement}
+\label{sec:problem}
+Software development today relies heavily on CI/CD pipelines that automate building, testing and deployment. Despite the efficiency and speed they bring, CI/CD pipelines suffer from frequent failures caused by test failures, dependency issues, configuration mismatches, compilation problems, flaky tests and execution instability, which delay software delivery and reduce developer productivity. CI/CD tools such as Jenkins, GitHub Actions and GitLab CI/CD concentrate on executing and observing pipelines. They do not predict likely failures, identify root causes, find bottlenecks, or recommend improvements. Developers must investigate long execution logs to find problems. Moreover, published failure predictors are usually evaluated in ways that leak future information, so their reported accuracy is not what a team would experience. It is therefore reasonable to develop an artificial intelligence-based solution that analyzes CI/CD execution history and predicts failures before a build runs, under an evaluation that matches real use. The same solution should detect abnormal executions, group failure cases, and generate optimization suggestions.
+
+\section{Motivation}
+\label{sec:motivation}
+CI/CD pipelines are one of the most important aspects of today's DevOps practice because they automate software delivery. While automation increases developer productivity, pipeline failures pose significant challenges. Frequent failures disrupt development work, consume unnecessary computational resources, and delay the delivery of new software.
+
+Finding the error behind a failed pipeline means manually analyzing execution logs, which becomes harder when pipelines have many steps with dependencies between them. Today's CI/CD services focus on automation and monitoring and offer little intelligent analytics.
+
+A second motivation emerged during the project. Build failure prediction looks far easier than it is when it is evaluated carelessly: on our data, the same kind of model scores 0.91 AUC on a random split but only 0.63 when evaluated the way a team would use it (Chapter~\ref{ch:results}). A useful system must therefore be both effective and honestly measured.
+
+This project explores an artificial intelligence-powered CI/CD optimization platform that predicts failures, discovers inefficient pipeline steps, analyzes failure patterns and generates recommendations, all evaluated under a protocol that reflects real use.
+
+\section{Objectives and Scope}
+\label{sec:objectives}
+\minorhead{Objectives}
+\begin{enumerate}
+\item Develop a machine learning-based solution that predicts CI/CD pipeline build failures from historical data before the build runs, and evaluate it with a leakage-safe, chronological, within-repository protocol.
+\item Detect bottlenecks and abnormal execution behavior in CI/CD pipeline jobs to support pipeline optimization.
+\item Provide automated root cause analysis and optimization suggestions to minimize developer debugging effort and improve reliability, presented through an interactive dashboard.
+\end{enumerate}
+
+\minorhead{Scope}
+This study uses historical CI/CD build data to predict build failures and analyze performance issues. The data covers 858,368 Travis~CI builds from 947 projects (2011--2016) and 146,556 GitHub Actions runs from 60 projects (2025--2026). Machine learning is used to predict failures, and anomaly detection and log analysis are used to find bottlenecks and group failures. The findings are delivered as predictive analytics, bottleneck detection, root cause analysis and optimization suggestions, through an API that receives live GitHub Actions events and a web dashboard. The system is advisory: it never blocks or changes CI builds.
+
+\minorhead{Impact}
+For industry, the system helps teams prioritize review and debugging effort and reduce wasted builds. For academia, it provides an evaluation protocol and pre-registered evidence that make build failure prediction results more trustworthy and comparable.

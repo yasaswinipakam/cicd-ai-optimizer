@@ -1,0 +1,73 @@
+\chapter{System Requirement Specification}
+\label{ch:srs}
+
+\section{Functional Requirements}
+\label{sec:functional}
+The artificial intelligence-based pipeline optimization system should satisfy the following functional requirements. Section~\ref{sec:testing} maps each one to its implementation.
+\begin{itemize}
+\item Collection of historical CI/CD pipeline records, including build outcomes, commits, timing and logs, and live ingestion of GitHub Actions events.
+\item Preprocessing and cleansing of pipeline data for effective analysis.
+\item Feature extraction from historical records, including code churn, failure rates, commit timing and pipeline history, using only information available before a build runs.
+\item Training and execution of machine learning algorithms for build failure prediction.
+\item Anomaly detection for slow or abnormal pipeline jobs.
+\item Categorization of similar failure logs for automated root cause analysis.
+\item Optimization suggestions to improve the efficiency of pipelines.
+\item Visualization of pipeline analytics, predictions and bottlenecks through a dashboard.
+\end{itemize}
+
+\section{Non-functional Requirements}
+\label{sec:nonfunctional}
+\begin{itemize}
+\item \textbf{Scalability:} The system should cope efficiently with large volumes of CI/CD data from many projects and repositories. Development used 3.56 million Travis~CI job records.
+\item \textbf{Reliability:} The platform should produce consistent predictions. The live history computed by the service must equal the history used in training.
+\item \textbf{Performance:} The system should score a build quickly enough to be useful before it runs.
+\item \textbf{Accuracy:} Models should rank risky builds well within each repository and be evaluated without information leakage.
+\item \textbf{Explainability:} Each prediction should come with an explanation of the factors behind it.
+\item \textbf{Security:} Webhook endpoints must verify GitHub's HMAC signature, and the public demonstration must be read-only.
+\item \textbf{Usability:} The monitoring dashboard should be user-friendly and intuitive.
+\item \textbf{Maintainability:} The architecture should make maintenance and enhancement easy; automated tests and continuous integration protect it.
+\end{itemize}
+
+\section{Hardware Requirements}
+\label{sec:hardware}
+\begin{table}[H]
+\centering
+\caption{Hardware requirements}
+\label{tab:hw}
+\begin{tabular}{|p{4cm}|p{9cm}|}
+\hline
+\textbf{Component} & \textbf{Specification}\\ \hline
+Processor & Intel i5 / Ryzen 5 / Apple silicon or higher\\ \hline
+RAM & Minimum 8 GB (16 GB recommended for training on the full Travis~CI dataset)\\ \hline
+Storage & 256 GB SSD\\ \hline
+GPU (Optional) & Not required: all models are tree ensembles trained on CPU\\ \hline
+Operating System & Windows / Linux / macOS\\ \hline
+Deployment & Cloud container service with 512 MB RAM (Render free tier is sufficient for the demonstration)\\ \hline
+\end{tabular}
+\end{table}
+
+\section{Software Requirements}
+\label{sec:software}
+\begin{longtable}{|p{4.6cm}|p{8.4cm}|}
+\caption{Software requirements}\label{tab:sw}\\
+\hline
+\textbf{Software Component} & \textbf{Purpose}\\ \hline
+\endfirsthead
+\hline
+\textbf{Software Component} & \textbf{Purpose}\\ \hline
+\endhead
+Python 3.11 & Core programming language\\ \hline
+Pandas, NumPy, PyArrow & Data preprocessing, analysis and storage\\ \hline
+Scikit-learn & Random Forest, Decision Tree, SVM, Isolation Forest, TF-IDF and k-means\\ \hline
+LightGBM, XGBoost & Gradient-boosted models, including the learning-to-rank model\\ \hline
+SHAP & Explanations of individual predictions\\ \hline
+FastAPI, Uvicorn & REST API and webhook service\\ \hline
+SQLAlchemy, SQLite & Storage of pipelines, builds, predictions and job telemetry\\ \hline
+ReportLab & Per-build PDF reports\\ \hline
+React, Vite, Tailwind CSS & Web dashboard\\ \hline
+Recharts & Animated charts on the dashboard\\ \hline
+pytest & Automated tests (84 tests)\\ \hline
+GitHub, GitHub Actions & Version control, continuous integration of this project, and a data source\\ \hline
+Docker, Render & Containerized deployment of the public demonstration\\ \hline
+Visual Studio Code & Development environment\\ \hline
+\end{longtable}

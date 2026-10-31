@@ -1,0 +1,32 @@
+\chapter{Conclusion and Future Work}
+\label{ch:conclusion}
+
+\section{Conclusion}
+CI/CD has made the integration, testing and deployment of code largely automatic. Yet frequent build failures, long execution times, dependency issues and manual debugging remain challenges, and current CI/CD systems concentrate on automation and monitoring rather than failure prediction and optimization.
+
+This project designed, built and evaluated an AI-based system that predicts CI/CD build failures before a build runs, detects bottlenecks, groups and diagnoses failures, and presents the results on a dashboard. The main conclusions are:
+\begin{itemize}
+\item \textbf{Evaluation matters as much as the model.} The same kind of classifier scores 0.91 AUC on a random split but only 0.63 under a protocol that matches real use. That protocol uses only information available at trigger time, counts a past build only once it has finished, evaluates chronologically, and measures ranking within each repository. Results that skip these steps should not be trusted.
+\item \textbf{Stream-aware ranking works.} Adding the history of the build's own branch or pull request, the state of builds still running, and a learning-to-rank objective improved within-repository AUC on Travis~CI from 0.628 to 0.698. It also improved from 0.556 to 0.622 on new breakages, where the last outcome gives no clue.
+\item \textbf{The result carries over.} Tested on GitHub Actions under protocols fixed in advance, the gain was positive in every fold. The first test was inconclusive under its strict rule (3 of 5 folds); a confirmation on 30 new repositories met the rule in all five folds (0.911 vs.\ 0.763).
+\item \textbf{The system is usable.} The deployed service scores GitHub Actions runs automatically and explains each prediction. Each repository reviews its riskiest 15\% of runs, which catches about 41\% of its failures. A read-only public demonstration shows the system on real, out-of-sample runs.
+\end{itemize}
+
+\minorhead{Objectives achieved}
+\begin{enumerate}
+\item \textit{Predict build failures from historical data.} Achieved, with a leakage-safe protocol and pre-registered external confirmation (Sections~\ref{sec:travis}--\ref{sec:gha}).
+\item \textit{Detect bottlenecks and abnormal execution.} Achieved: job durations are compared with their own history to flag slow and stalled jobs, and Isolation Forest flags unusual inputs (Section~\ref{sec:aux}).
+\item \textit{Automated root cause analysis and suggestions on a dashboard.} Achieved: failure logs are clustered and diagnosed, each category maps to a suggestion, and everything is presented on the dashboard (Sections~\ref{sec:aux} and~\ref{sec:dashboard}).
+\end{enumerate}
+
+\section{Future Work}
+\begin{itemize}
+\item \textbf{Forward-looking test.} A test of the frozen deployed system has been pre-registered. It will score October~2026 runs from the 60 repositories, collected from 28~November~2026, with the model and alert rule fixed by their SHA-256 fingerprints. It counts as holding up if the model clearly beats a ``last run failed'' baseline and reaches at least 0.80 within-repository AUC.
+\item \textbf{Earlier warning for first failures.} Gains on new breakages are smaller and vanish when outcomes are delayed. Richer change information, such as which files and tests a change touches, may help.
+\item \textbf{More CI platforms.} Collect and evaluate data from GitLab CI/CD and Jenkins, beyond the existing Jenkins endpoint.
+\item \textbf{Large-scale deployment.} Run the service on Kubernetes with a production database, and add per-team configuration of the review budget.
+\item \textbf{Deeper log analysis.} Use natural language processing models for log understanding and root cause identification, and explore automated self-repair for common failure types.
+\item \textbf{Calibrated probabilities per repository}, so that a predicted risk can be read as a real chance of failure.
+\end{itemize}
+
+These enhancements would further improve the CI/CD optimization system in effectiveness and reach.
