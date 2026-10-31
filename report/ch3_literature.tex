@@ -1,0 +1,75 @@
+\chapter{Literature Survey}
+\label{ch:lit}
+
+\section{Existing Systems}
+\label{sec:existing}
+Continuous Integration and Continuous Deployment (CI/CD) systems are widely used in modern software development to automate software building, testing and deployment~\cite{hilton2016usage}. They help development teams deliver software faster, reduce manual effort and maintain continuous integration workflows. Popular CI/CD platforms such as Jenkins, GitHub Actions, GitLab CI/CD and Travis CI are used across the software industry.
+
+\textbf{Jenkins} is one of the most widely used open-source CI/CD automation tools. It supports automated builds, testing and deployment through customizable pipelines and plugins. Jenkins automates software delivery efficiently but focuses on execution and monitoring; it cannot predict failures or identify root causes automatically.
+
+\textbf{GitHub Actions} is a cloud-based CI/CD platform integrated directly with GitHub repositories. It automates workflows using YAML configuration files. It improves automation, but developers still inspect logs manually when failures occur, because the platform has no predictive analytics or optimization features.
+
+\textbf{GitLab CI/CD} provides integrated DevOps functionality, including automated testing, deployment, monitoring and repository management, within one platform. It supports scalable delivery workflows but focuses on automation and execution management rather than intelligent prediction and optimization.
+
+\textbf{Travis CI} is commonly used in open-source projects for automated builds and tests. It supports many programming languages and integrates easily with GitHub. However, it offers limited analytics, and failed builds must be debugged manually. Its build histories, published as the TravisTorrent dataset~\cite{beller2017travistorrent}, are the most widely used resource for CI research and are the main development data of this project.
+
+Monitoring and visualization tools such as \textbf{Grafana, Kibana and the ELK Stack} are also widely used to analyze CI/CD logs and execution metrics. They help developers track pipeline performance and visualize trends, but they rely on manual interpretation to identify issues and inefficiencies.
+
+\section{Research on Build Failure Prediction}
+\label{sec:research}
+Many studies have explored Artificial Intelligence and Machine Learning techniques for CI/CD pipeline management and build failure prediction.
+
+\minorhead{Empirical studies of CI and its failures}
+Hilton et al.~\cite{hilton2016usage} studied the usage, costs and benefits of CI in open-source projects and found that CI helps projects release more often but has real costs. Rausch et al.~\cite{rausch2017empirical} conducted a large-scale empirical study of build failures in open-source Java projects and found that test failures cause the majority of broken builds. The study provided useful statistical insights but did not include predictive or optimization mechanisms. Durieux et al.~\cite{durieux2019analysis} analyzed more than 35 million Travis~CI jobs, and later~\cite{durieux2020empirical} studied restarted and flaky builds, identifying unstable tests and network problems as common causes. Gallaba et al.~\cite{gallaba2018noise} showed that historical build data contains noise and heterogeneity, such as failures that are ignored or builds that are restarted, that can mislead analyses. Ghaleb et al.~\cite{ghaleb2019empirical} studied why some CI builds take a long time, which motivates bottleneck detection.
+
+\minorhead{Build outcome prediction}
+Hassan and Wang~\cite{hassan2017change} proposed a change-aware build prediction model that uses features of the code change to predict build outcomes and avoid stalls. Ni and Li~\cite{ni2017cost} used cascaded classifiers to predict build outcomes cost-effectively, and Xia and Li~\cite{xia2017could} compared machine learning classifiers for predicting CI build results. Saidani et al.~\cite{saidani2020predicting} used Multi-Objective Genetic Programming on historical build information and software metrics. The study achieved good prediction accuracy but provided no automated root cause analysis or optimization support. Saidani et al.~\cite{saidani2022improving} later applied deep learning models such as LSTM and CNN and improved accuracy over traditional models. However, these models need high computational resources and explain their predictions poorly. Chen et al.\ proposed BuildFast~\cite{chen2020buildfast}, a history-aware predictor that uses the outcomes of previous builds, and Jin and Servant~\cite{jin2020cost} studied cost-efficient approaches that decide which builds to run. Barrak et al.~\cite{barrak2021why} replicated a study of why builds fail using Random Forest models, identifying code complexity, build history and developer activity as important indicators. The system performed poorly on imbalanced data and focused on Java projects. Kumar et al.~\cite{kumar2025optimizing} evaluated models such as Support Vector Machines for predicting build failures from historical pipeline data. Their results were promising, but the work lacked automated root cause analysis and bottleneck detection.
+
+\minorhead{Diagnosis, triage and practice}
+Zhang et al.\ proposed BuildSheriff~\cite{zhang2022buildsheriff}, a change-aware triage system that uses stack-trace similarity and code-change analysis to group related test failures and reduce debugging effort. However, the approach mainly supports Java projects in Travis~CI environments and struggles with flaky tests. Hong et al.~\cite{hong2024practitioners} studied practitioners' challenges with, and perceptions of, build failure prediction at Atlassian. They highlight that developers need predictions that are trustworthy and actionable in their own projects. Farihane~\cite{farihane2025ci} presented a systematic mapping study of AI-driven CI/CD pipeline optimization, highlighting the growing use of machine learning for pipeline analytics, failure prediction and automation. That work reviewed existing techniques but did not propose an implementation.
+
+\minorhead{Methodology}
+Kaufman et al.~\cite{kaufman2012leakage} formalized \emph{data leakage}: the use of information during training that will not be available when predicting. Bergmeir and Benítez~\cite{bergmeir2012use} discussed how evaluation must respect time order when data are time-dependent. Nosek et al.~\cite{nosek2018preregistration} argued for pre-registration, which means fixing the analysis plan before seeing the data, to make confirmatory results credible. These works shape the evaluation protocol of this project.
+
+\begin{longtable}{|>{\centering\arraybackslash}p{0.7cm}|p{2.9cm}|p{5.6cm}|p{5.0cm}|}
+\caption{Literature survey summary}\label{tab:lit}\\
+\hline
+\textbf{Ref.} & \textbf{Authors (Year)} & \textbf{Method / contribution} & \textbf{Limitation / gap}\\ \hline
+\endfirsthead
+\hline
+\textbf{Ref.} & \textbf{Authors (Year)} & \textbf{Method / contribution} & \textbf{Limitation / gap}\\ \hline
+\endhead
+\cite{hilton2016usage} & Hilton et al.\ (2016) & Usage, costs and benefits of CI in open source & Descriptive; no prediction\\ \hline
+\cite{beller2017travistorrent} & Beller et al.\ (2017) & TravisTorrent dataset of Travis~CI build histories & Mixes pre-build and post-build fields; leakage risk if used naively\\ \hline
+\cite{rausch2017empirical} & Rausch et al.\ (2017) & Empirical analysis of build failure causes (Java) & No prediction or optimization\\ \hline
+\cite{hassan2017change} & Hassan and Wang (2017) & Change-aware build outcome prediction & No root cause analysis or deployment\\ \hline
+\cite{ni2017cost} & Ni and Li (2017) & Cascaded classifiers for cost-effective prediction & Focus on cost; no diagnosis\\ \hline
+\cite{xia2017could} & Xia and Li (2017) & Comparison of ML classifiers for CI build results & No diagnosis or deployment\\ \hline
+\cite{gallaba2018noise} & Gallaba et al.\ (2018) & Noise and heterogeneity in build data & Descriptive; no prediction\\ \hline
+\cite{ghaleb2019empirical} & Ghaleb et al.\ (2019) & Causes of long CI build durations & No prediction\\ \hline
+\cite{durieux2019analysis} & Durieux et al.\ (2019) & Analysis of 35M+ Travis~CI jobs & Descriptive; no prediction\\ \hline
+\cite{saidani2020predicting} & Saidani et al.\ (2020) & Multi-objective genetic programming for failure prediction & No root cause analysis or optimization\\ \hline
+\cite{durieux2020empirical} & Durieux et al.\ (2020) & Restarted and flaky builds on Travis~CI & Focus on flaky builds; no prediction\\ \hline
+\cite{chen2020buildfast} & Chen et al.\ (2020) & BuildFast: history-aware outcome prediction & Does not use in-flight build context or pre-registered external tests\\ \hline
+\cite{jin2020cost} & Jin and Servant (2020) & Cost-efficient selection of builds to run & Focus on build skipping\\ \hline
+\cite{barrak2021why} & Barrak et al.\ (2021) & Random Forest replication of why builds fail & Weak on imbalanced data; Java only\\ \hline
+\cite{zhang2022buildsheriff} & Zhang et al.\ (2022) & BuildSheriff: test failure triage by stack-trace similarity & Java/Travis only; struggles with flaky tests\\ \hline
+\cite{saidani2022improving} & Saidani et al.\ (2022) & LSTM/CNN deep learning for failure prediction & High compute; limited explainability\\ \hline
+\cite{hong2024practitioners} & Hong et al.\ (2024) & Practitioners' perceptions of failure prediction at Atlassian & Qualitative; no new model\\ \hline
+\cite{farihane2025ci} & Farihane (2025) & Mapping study of AI for CI/CD optimization & Review only; no implementation\\ \hline
+\cite{kumar2025optimizing} & Kumar et al.\ (2025) & SVM and other ML models for failure prediction & No root cause analysis or bottleneck detection\\ \hline
+\end{longtable}
+
+\section{Research Gap}
+\label{sec:gap}
+CI/CD tools prioritize automating and monitoring executions rather than intelligent analytics and optimization. Several papers apply machine learning to detect pipeline failures or analyze logs, but most cover only one part of the problem: some only predict failures, while others only cluster logs or detect anomalies. Very few tools handle prediction, anomaly detection, root cause analysis and optimization together. Existing models also suffer from imbalanced datasets, scalability problems and limited explainability, and most apply only to one CI/CD tool, such as Travis~CI or Jenkins.
+
+During the project, a further and more fundamental gap became clear: \textbf{how results are evaluated}.
+\begin{itemize}
+\item \textbf{Leakage.} Datasets such as TravisTorrent contain fields computed from the build log (test counts, durations) that encode the outcome. Models that use them look accurate but cannot work before a build runs.
+\item \textbf{Random splits.} Shuffling builds lets a model learn a repository's \emph{future} failure rate and use it to predict the past.
+\item \textbf{History that ignores finish times.} A build's ``previous outcome'' is only known once that build has finished; using it earlier leaks information.
+\item \textbf{Pooled metrics.} Repositories differ greatly in failure rate, so a model can score highly overall just by recognizing risky repositories. That says little about ranking a single team's builds, which is what a team actually needs.
+\item \textbf{No confirmatory tests.} Results are rarely re-tested on new data under a plan fixed in advance.
+\end{itemize}
+There is therefore a need for an AI-based CI/CD optimization solution that combines prediction, anomaly detection, root cause analysis and visualization, and that is evaluated under a protocol matching real use. This project addresses both needs.

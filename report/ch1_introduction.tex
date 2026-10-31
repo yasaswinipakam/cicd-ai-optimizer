@@ -1,0 +1,90 @@
+\chapter{Introduction}
+\label{ch:intro}
+
+\section{Overview}
+\label{sec:overview}
+
+\minorhead{Introduction to CI/CD Pipelines}
+The implementation of Continuous Integration and Continuous Deployment (CI/CD) pipelines has become crucial in the modern era of software development and DevOps engineering. Modern software development requires rapid application delivery without compromising software quality and reliability. Traditional ways of software integration and testing can no longer cope with the increasing complexity and size of contemporary applications. For this reason, CI/CD pipelines have been widely adopted to automate software integration, testing, and deployment~\cite{hilton2016usage}.
+
+Continuous Integration is the practice in which developers continuously merge changes into a shared repository. Whenever the code is updated, automated builds and tests run to check its correctness. In the Continuous Delivery stage, changes that pass testing are automatically deployed to a staging or production environment.
+
+\minorhead{Existing CI/CD Platforms}
+A variety of CI/CD tools including Jenkins, GitHub Actions, GitLab CI/CD, Travis CI, CircleCI, and Azure DevOps are extensively used in the software industry. They automate stages of the software development life cycle such as source code integration, dependency management, building, testing, packaging, deployment, and monitoring. A pipeline can have many stages, executed serially or concurrently depending on project needs. The automation these tools offer helps detect problems early and improves the deployment process.
+
+These tools also offer dashboards, logs and monitoring, which help developers manage software delivery more effectively.
+
+\minorhead{Challenges in Existing CI/CD Systems}
+Despite these benefits, CI/CD pipelines still face difficulties. Large-scale studies of CI histories report that a substantial share of builds fail~\cite{rausch2017empirical,durieux2019analysis}, for reasons ranging from test failures, dependency conflicts and wrong configurations to compilation errors, flaky tests and unstable execution environments. In the data used in this project, 19.5\% of Travis~CI builds and between 8.9\% and 28.2\% of GitHub Actions runs failed. Build failures disrupt development, delay releases, and reduce developer productivity.
+
+The manual effort needed to debug failed builds is one of the most prominent problems in operating CI/CD pipelines. To fix a failure, a developer must read through execution logs to find out what went wrong. Pipelines usually have several stages and many components, so this can take a significant amount of time and adds to developer workload.
+
+Apart from failures, CI/CD pipelines suffer from performance inefficiencies such as excessive execution time, redundant testing, poor stage scheduling and wasted resources~\cite{ghaleb2019empirical}. Some stages take unacceptably long because of dependency installation issues, testing problems, or infrastructure issues.
+
+\minorhead{Role of Artificial Intelligence and Machine Learning}
+Advances in Artificial Intelligence (AI), Machine Learning (ML) and data analytics make it possible to manage CI/CD pipelines more predictively. Machine learning algorithms can learn from past build data to recognize patterns associated with failed builds and anomalous pipeline behavior, helping developers anticipate problems before they occur.
+
+A number of research papers use machine learning techniques such as Random Forest, Decision Trees, Support Vector Machines (SVM), neural networks and deep learning to predict CI build failures~\cite{saidani2020predicting,saidani2022improving,kumar2025optimizing}. Others consider anomaly detection, automated log analysis and clustering~\cite{zhang2022buildsheriff}. However, each of these studies solves a specific part of the problem, and few integrate them into a complete pipeline-analysis solution. Moreover, as this project shows, the way such predictors are usually evaluated can greatly overstate how well they work in practice.
+
+\minorhead{Proposed System Overview}
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  font=\small,
+  box/.style={draw, rounded corners=3pt, align=center, minimum height=11mm, text width=33mm, inner sep=3pt},
+  src/.style={box, fill=blue!7, draw=blue!50!black},
+  proc/.style={box, fill=teal!8, draw=teal!60!black},
+  ml/.style={box, fill=violet!8, draw=violet!60!black},
+  outbox/.style={box, fill=green!8, draw=green!45!black},
+  arr/.style={-{Stealth[length=2.2mm]}, thick}]
+\node[src] (travis) {Travis~CI history\\(858{,}368 builds)};
+\node[src, below=5mm of travis] (gha) {GitHub Actions runs\\(146{,}556 runs, 60 repos)};
+\node[src, below=5mm of gha] (live) {Live GitHub webhooks\\(workflow runs and jobs)};
+\node[proc, right=11mm of gha] (pipe) {Leakage-safe pipeline\\availability registry,\\finish-time-safe history};
+\node[ml, right=11mm of pipe, yshift=11mm] (pred) {Failure prediction\\(\tierE: LightGBM\\rank + binary blend)};
+\node[ml, right=11mm of pipe, yshift=-11mm] (diag) {Anomaly, bottleneck and\\root cause analysis};
+\node[outbox, below=12mm of pipe, xshift=22mm] (dash) {Dashboard and API\\risk, alerts, trends,\\explanations, reports};
+\draw[arr] (travis) -- (pipe);
+\draw[arr] (gha) -- (pipe);
+\draw[arr] (live) -- (pipe);
+\draw[arr] (pipe) -- (pred);
+\draw[arr] (pipe) -- (diag);
+\draw[arr] (pred.south) |- (dash.east);
+\draw[arr] (diag.south) -- ++(0,-3mm) -| ([xshift=6mm]dash.north);
+\end{tikzpicture}
+\caption{Overview of the AI-driven CI/CD optimization system}
+\label{fig:overview}
+\end{figure}
+
+The project ``AI-Driven Analysis and Optimization of CI/CD Pipelines for Build Failure Prediction'' addresses these constraints with an intelligent system that predicts build failures and supports pipeline optimization (Fig~\ref{fig:overview}). It combines machine learning, anomaly detection and log analysis to predict build failures before a build runs, recognize slow or stalled pipeline jobs, group recurring failure patterns, and suggest remedies.
+
+The system learns from historical CI/CD data: build outcomes, commits and the size of each change, timing, and the history of each repository, branch and pull request. It was developed on the TravisTorrent dataset~\cite{beller2017travistorrent} of Travis~CI builds and validated on GitHub Actions data that we collected. Random Forest, Decision Tree and Support Vector Machine models from the original plan were trained and compared. The final model is a LightGBM learning-to-rank ensemble that uses the history of the build's own branch or pull request. Anomaly detection identifies jobs that run abnormally long, and log clustering and rule-based diagnosis group similar failures.
+
+\minorhead{Significance of the Project}
+The platform helps teams spend a limited review budget where it matters most: it flags the riskiest builds before they run, explains each prediction, and highlights recurring failure types and slow jobs. This can reduce debugging effort and wasted compute and make pipelines more reliable. A visualization dashboard lets developers and administrators observe predictions, failure trends, bottlenecks and suggestions interactively.
+
+The project is significant for software engineering and DevOps for a second reason. It shows how AI methods can support CI/CD processes, and it also shows how such methods must be evaluated before their numbers can be trusted.
+
+\section{Summary of the Work Carried Out}
+\label{sec:summarywork}
+The project progressed beyond the design proposed in Phase~1 to a complete, evaluated and deployed system:
+\begin{itemize}
+\item \textbf{Leakage-safe data pipeline.} A registry records when every input becomes available and blocks any input that would only be known after a build finishes. History features count a previous build only once it has finished.
+\item \textbf{Prediction models.} Random Forest, Decision Tree, SVM, XGBoost, LightGBM and a stacking ensemble were compared, and a new model (\tierE) was developed that uses the history of each branch or pull request.
+\item \textbf{Rigorous evaluation.} Models were evaluated chronologically and \emph{within each repository}, with confidence intervals, and tested on GitHub Actions under protocols written and fixed before the data was collected.
+\item \textbf{Deployed system.} A FastAPI service scores GitHub Actions runs automatically through webhooks, issues alerts under a per-repository review budget, detects job bottlenecks and diagnoses failure logs. A React dashboard presents the results, and a read-only public demonstration is available online.
+\end{itemize}
+
+\section{Organization of the Report}
+\label{sec:organization}
+This report is organized into ten chapters.
+Chapter 1 introduces the project and its significance.
+Chapter 2 presents the problem statement, motivation, objectives and scope.
+Chapter 3 reviews existing systems, related research and research gaps.
+Chapter 4 outlines the functional, non-functional, hardware and software requirements.
+Chapter 5 describes the system design, architecture, methodology and UML diagrams.
+Chapter 6 discusses the tools and techniques used.
+Chapter 7 describes the implementation: datasets, data pipeline, features, models, the deployed system and the dashboard.
+Chapter 8 presents and discusses the results.
+Chapter 9 concludes the report and outlines future work.
+Chapter 10 lists the references used in the study.

@@ -1,0 +1,260 @@
+% ---------------------------------------------------------------- Title page
+\begin{titlepage}
+\centering
+\singlespacing
+\setlength{\parskip}{3pt}
+{\fontsize{16}{20}\selectfont\bfseries\color{vtured} VISVESVARAYA TECHNOLOGICAL UNIVERSITY\par}
+\vspace{2pt}
+{\large Jnana Sangama, Belagavi - 590 018, Karnataka\par}
+\vspace{6pt}
+\includegraphics[width=2.0cm]{vtu_logo.png}\par
+\vspace{8pt}
+{\large\bfseries Capstone Project Phase -- 1\par (Course code: 24AM6PWPW1)\par}
+\vspace{8pt}
+{\large\bfseries PROJECT WORK REPORT\par}
+\vspace{10pt}
+{\fontsize{18}{24}\selectfont\bfseries\color{titlegreen} AI-Driven Analysis and Optimization of CI/CD\\[2pt] Pipelines for Build Failure Prediction\par}
+\vspace{10pt}
+{\large\itshape In the Department of\par}
+{\Large\bfseries\color{deptblue} Machine Learning\par}
+{\large\bfseries (UG Program: B.E. in Artificial Intelligence and Machine Learning)\par}
+{\large Submitted by\par}
+\vspace{6pt}
+{\bfseries
+\begin{tabular}{@{}l@{\hspace{1.2em}}l@{}}
+\textcolor{deptblue}{Pakam Yasaswini} & \textcolor{titlegreen!70!black}{1BM23AI121}\\
+\textcolor{deptblue}{Reem Rashid} & \textcolor{titlegreen!70!black}{1BM23AI148}\\
+\textcolor{deptblue}{Sarayu KS} & \textcolor{titlegreen!70!black}{1BM23AI171}
+\end{tabular}\par}
+\vspace{4pt}
+{\color{titlegreen!70!black} 6th Semester\par}
+\vspace{6pt}
+{\large Under the Guidance of\par}
+\vspace{4pt}
+{\large\bfseries\color{deptblue} Dr. Rajeshwari M.R.\par}
+\vspace{3pt}
+Designation\par
+Dept. of MEL, BMSCE, Bengaluru -- 19\par
+\vspace{8pt}
+\includegraphics[width=2.1cm]{bmsce_logo.png}\par
+\vspace{8pt}
+{\Large\bfseries\color{deptblue} DEPARTMENT OF MACHINE LEARNING\par}
+\vspace{4pt}
+{\fontsize{18}{22}\selectfont\bfseries\color{vtured} B.M.S. COLLEGE OF ENGINEERING\par}
+{\small\itshape (An Autonomous Institute, Affiliated to VTU)\par}
+P.O. Box No. 1908, Bull Temple Road, Bengaluru - 560 019\par
+\end{titlepage}
+
+% ---------------------------------------------------------------- Certificate
+\thispagestyle{empty}
+\begin{center}
+\singlespacing
+{\fontsize{16}{20}\selectfont\bfseries\color{vtured} B.M.S COLLEGE OF ENGINEERING\par}
+{\small (An Autonomous Institute, Affiliated to VTU)\par}
+P.O. Box No. 1908, Bull Temple Road, Bengaluru - 560 019\par
+\vspace{14pt}
+{\Large\bfseries\color{deptblue} DEPARTMENT OF MACHINE LEARNING\par}
+\vspace{12pt}
+\includegraphics[width=2.4cm]{bmsce_logo.png}\par
+\vspace{12pt}
+{\large\bfseries CERTIFICATE\par}
+\end{center}
+\vspace{6pt}
+This is to certify that \textcolor{deptblue}{Ms.\ Pakam Yasaswini} bearing \textcolor{deptblue}{USN: 1BM23AI121}, \textcolor{deptblue}{Ms.\ Reem Rashid} bearing \textcolor{deptblue}{USN: 1BM23AI148}, and \textcolor{deptblue}{Ms.\ Sarayu K S} bearing \textcolor{deptblue}{USN: 1BM23AI171} have satisfactorily completed the Course -- Capstone Project Work (Course Code: 24AM6PWPW1) with the title \textcolor{deptblue}{\textbf{``AI-Driven Analysis and Optimization of CI/CD Pipelines for Build Failure Prediction''}} in partial fulfillment of academic curriculum requirements of the 6th semester UG Program -- B.\,E. in Artificial Intelligence and Machine Learning in the Department of Machine Learning, BMSCE, an Autonomous Institute, affiliated to Visvesvaraya Technological University, Belagavi during May 2026. It is also stated that the base work considered for the presentation is used only for academic purpose and not used in its original form anywhere for award of any degree.
+
+\vspace{10pt}
+\textbf{Student Signature}
+
+\vspace{30pt}
+\noindent\begin{tabular}{@{}p{0.5\textwidth}p{0.45\textwidth}@{}}
+\textbf{Signature of the Faculty,} & \textbf{Signature of the Head}\\[12pt]
+\textcolor{sigblue}{\textbf{Dr. Rajeshwari M.R.}} & \textbf{Dr. M Dakshayini}\\
+Designation, Dept. of MEL, BMSCE & Prof. \& Head, Dept. of MEL, BMSCE
+\end{tabular}
+
+\vspace{24pt}
+\begin{center}\large\bfseries External Examination\end{center}
+\hspace{1em}\textbf{Examiner Name and Signature}
+
+\textbf{1.}
+
+\textbf{2.}
+\clearpage
+
+% ---------------------------------------------------------------- Declaration
+\pagenumbering{roman}
+\setcounter{page}{1}
+\begin{center}\fontsize{14}{17}\selectfont\bfseries DECLARATION\end{center}
+\label{fm:declaration}
+We, Ms.\ Pakam Yasaswini bearing USN: 1BM23AI121, Ms.\ Reem Rashid bearing USN: 1BM23AI148, and Ms.\ Sarayu K S bearing USN: 1BM23AI171, hereby declare that the project titled ``AI-Driven Analysis and Optimization of CI/CD Pipelines for Build Failure Prediction'' is an original work carried out by us under the guidance of Dr.\ Rajeshwari M.R., Assistant Professor, at BMSCE, Bengaluru. The work presented in this report has not been submitted elsewhere for any other degree, diploma, or certification.
+
+We declare that all the references and sources used in the report have been properly acknowledged and cited. No part of this report has been copied, plagiarized, or reproduced from another work without proper attribution.
+
+\vspace{30pt}
+\begin{flushright}
+\begin{tabular}{@{}l@{}}
+Pakam Yasaswini -- (USN: 1BM23AI121)\\
+Reem Rashid -- (USN: 1BM23AI148)\\
+Sarayu KS -- (USN: 1BM23AI171)
+\end{tabular}
+\end{flushright}
+\clearpage
+
+% ---------------------------------------------------------------- Acknowledgement
+\begin{center}\fontsize{14}{17}\selectfont\bfseries ACKNOWLEDGEMENT\end{center}
+\label{fm:ack}
+We would like to express our deepest gratitude and sincere thanks to our guide Dr.\ Rajeshwari M.R., Assistant Professor, Department of Machine Learning, BMSCE, Bengaluru, for her keen interest, continuous guidance, and encouragement in bringing this project work to completion.
+
+We are grateful to Dr.\ M.\ Dakshayini, Professor and Head, Department of Machine Learning, Bengaluru, for her valuable suggestions and support throughout the project work.
+
+We express our profound gratitude to the Hon'ble Management and Dr.\ Bheemsha Arya, Principal, BMSCE, Bengaluru, for providing the necessary facilities and a supportive environment to carry out this project successfully.
+
+We would also like to thank all the staff members of the Department of Machine Learning for their support, encouragement, and guidance during the course of this project.
+
+Last but not the least, we would like to thank our parents, family, and friends whose constant encouragement and support made this work possible.
+
+\vspace{30pt}
+\begin{flushright}
+\begin{tabular}{@{}l@{}}
+Pakam Yasaswini -- (USN: 1BM23AI121)\\
+Reem Rashid -- (USN: 1BM23AI148)\\
+Sarayu KS -- (USN: 1BM23AI171)
+\end{tabular}
+\end{flushright}
+\clearpage
+
+% ---------------------------------------------------------------- Abstract
+\begin{center}\fontsize{14}{17}\selectfont\bfseries ABSTRACT\end{center}
+\label{fm:abstract}
+Continuous integration and continuous deployment (CI/CD) pipelines are central to modern software development, but failed builds still interrupt developers, delay releases and waste compute. CI/CD platforms automate and monitor pipelines; they offer little help in predicting which builds will fail, diagnosing why, or spotting slow stages.
+
+This project builds and evaluates an AI-driven system that predicts build failures \emph{before} a build runs, detects slow or stalled pipeline jobs, groups failure logs to suggest root causes, and presents the results on an interactive dashboard. The predictor was developed on 858,368 Travis~CI builds from 947 open-source projects and evaluated on 146,556 GitHub Actions runs from 60 further projects.
+
+A central finding is that the usual way of measuring these models greatly overstates them. With a random train/test split, classifiers such as Random Forest, Decision Tree and SVM appear strong (AUC up to 0.91), but they quietly use future information. Under a strict protocol, the same task scores 0.63. That protocol uses only information available when a build is triggered, counts a past build only once it has finished, evaluates chronologically, and measures how well a model ranks \emph{each repository's own} builds. Within this protocol, our final model (\tierE) adds the history of the build's own branch or pull request, the state of builds still running, and a learning-to-rank objective. It improves within-repository AUC from 0.628 to 0.698 on Travis~CI, including on builds that break a previously passing branch (0.556 to 0.622).
+
+We then tested the frozen model on GitHub Actions with protocols fixed and hashed before collecting any data. The first test (30 repositories) improved in every fold but was inconclusive under the pre-registered rule. A confirmation on 30 new repositories met the rule in all five folds (0.911 vs.\ 0.763).
+
+The deployed system receives GitHub webhooks and scores each workflow run when it is requested. Each repository's riskiest 15\% of recent runs are flagged as alerts, which catches about 41\% of a repository's failures. A read-only public demonstration and a pre-registered forward-looking test of the frozen system complete the work.
+
+\clearpage
+
+% ---------------------------------------------------------------- Table of contents (bordered, as in the template)
+\begin{center}\fontsize{14}{17}\selectfont\bfseries TABLE OF CONTENTS\end{center}
+\label{fm:toc}
+{\setlength{\extrarowheight}{2pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{|>{\centering\arraybackslash}p{1.1cm}|p{11.6cm}|>{\centering\arraybackslash}p{1.4cm}|}
+\hline
+\multicolumn{2}{|l|}{\textbf{Declaration}} & \textbf{\pageref{fm:declaration}}\\
+\multicolumn{2}{|l|}{\textbf{Acknowledgement}} & \textbf{\pageref{fm:ack}}\\
+\multicolumn{2}{|l|}{\textbf{Abstract}} & \textbf{\pageref{fm:abstract}}\\
+\multicolumn{2}{|l|}{\textbf{Table of Contents}} & \textbf{\pageref{fm:toc}}\\
+\multicolumn{2}{|l|}{\textbf{List of Figures}} & \textbf{\pageref{fm:lof}}\\
+\multicolumn{2}{|l|}{\textbf{List of Tables}} & \textbf{\pageref{fm:lot}}\\ \hline
+\textbf{1} & \textbf{INTRODUCTION} & \textbf{\pageref{ch:intro}}\\ \hline
+ & 1.1 Overview & \pageref{sec:overview}\\ \hline
+ & 1.2 Summary of the Work Carried Out & \pageref{sec:summarywork}\\ \hline
+ & 1.3 Organization of the Report & \pageref{sec:organization}\\ \hline
+\textbf{2} & \textbf{PROBLEM STATEMENT} & \textbf{\pageref{ch:problem}}\\ \hline
+ & 2.1 Problem Statement & \pageref{sec:problem}\\ \hline
+ & 2.2 Motivation & \pageref{sec:motivation}\\ \hline
+ & 2.3 Objectives and Scope & \pageref{sec:objectives}\\ \hline
+\textbf{3} & \textbf{LITERATURE SURVEY} & \textbf{\pageref{ch:lit}}\\ \hline
+ & 3.1 Existing Systems & \pageref{sec:existing}\\ \hline
+ & 3.2 Research on Build Failure Prediction & \pageref{sec:research}\\ \hline
+ & 3.3 Research Gap & \pageref{sec:gap}\\ \hline
+\textbf{4} & \textbf{SYSTEM REQUIREMENT SPECIFICATION} & \textbf{\pageref{ch:srs}}\\ \hline
+ & 4.1 Functional Requirements & \pageref{sec:functional}\\ \hline
+ & 4.2 Non-functional Requirements & \pageref{sec:nonfunctional}\\ \hline
+ & 4.3 Hardware Requirements & \pageref{sec:hardware}\\ \hline
+ & 4.4 Software Requirements & \pageref{sec:software}\\ \hline
+\textbf{5} & \textbf{SYSTEM DESIGN} & \textbf{\pageref{ch:design}}\\ \hline
+ & 5.1 System Architecture & \pageref{sec:architecture}\\ \hline
+ & 5.2 Proposed Methodology & \pageref{sec:methodology}\\ \hline
+ & 5.3 Detailed Design & \pageref{sec:detailed}\\ \hline
+ & \hspace{1.2em}5.3.1 Class Diagram & \pageref{sec:class}\\ \hline
+ & \hspace{1.2em}5.3.2 Activity Diagram & \pageref{sec:activity}\\ \hline
+ & \hspace{1.2em}5.3.3 Use Case Diagram & \pageref{sec:usecase}\\ \hline
+\textbf{6} & \textbf{IDENTIFICATION OF TOOLS AND TECHNIQUES} & \textbf{\pageref{ch:tools}}\\ \hline
+ & 6.1 Development Tools & \pageref{sec:devtools}\\ \hline
+ & 6.2 CI/CD and Integration Tools & \pageref{sec:citools}\\ \hline
+ & 6.3 Visualization and Deployment Tools & \pageref{sec:viztools}\\ \hline
+ & 6.4 Techniques Used & \pageref{sec:techniques}\\ \hline
+\textbf{7} & \textbf{IMPLEMENTATION} & \textbf{\pageref{ch:impl}}\\ \hline
+ & 7.1 Datasets & \pageref{sec:datasets}\\ \hline
+ & 7.2 Leakage-Safe Data Pipeline & \pageref{sec:pipeline}\\ \hline
+ & 7.3 Feature Engineering & \pageref{sec:features}\\ \hline
+ & 7.4 Prediction Models & \pageref{sec:models}\\ \hline
+ & 7.5 Anomaly, Bottleneck and Root Cause Modules & \pageref{sec:aux}\\ \hline
+ & 7.6 Deployed System & \pageref{sec:deployed}\\ \hline
+ & 7.7 Dashboard & \pageref{sec:dashboard}\\ \hline
+ & 7.8 Testing and Requirement Traceability & \pageref{sec:testing}\\ \hline
+\textbf{8} & \textbf{RESULTS AND DISCUSSION} & \textbf{\pageref{ch:results}}\\ \hline
+ & 8.1 Evaluation Protocol & \pageref{sec:protocol}\\ \hline
+ & 8.2 How Much the Usual Evaluation Overstates Results & \pageref{sec:leakage}\\ \hline
+ & 8.3 Results on Travis CI & \pageref{sec:travis}\\ \hline
+ & 8.4 New Breakages & \pageref{sec:newbreak}\\ \hline
+ & 8.5 Pre-Registered Tests on GitHub Actions & \pageref{sec:gha}\\ \hline
+ & 8.6 Deployed Model and Alert Policy & \pageref{sec:alerts}\\ \hline
+ & 8.7 Negative Results & \pageref{sec:negative}\\ \hline
+ & 8.8 Threats to Validity & \pageref{sec:threats}\\ \hline
+\textbf{9} & \textbf{CONCLUSION AND FUTURE WORK} & \textbf{\pageref{ch:conclusion}}\\ \hline
+\textbf{10} & \textbf{REFERENCES} & \textbf{\pageref{ch:references}}\\ \hline
+\end{longtable}}
+\clearpage
+
+% ---------------------------------------------------------------- List of figures
+\begin{center}\fontsize{14}{17}\selectfont\bfseries LIST OF FIGURES\end{center}
+\label{fm:lof}
+{\renewcommand{\arraystretch}{1.2}
+\begin{longtable}{|>{\centering\arraybackslash}p{1.6cm}|p{11.2cm}|>{\centering\arraybackslash}p{1.3cm}|}
+\hline
+\textbf{Figure No.} & \textbf{Description} & \textbf{Page}\\ \hline
+\endhead
+Fig \ref{fig:overview} & Overview of the AI-driven CI/CD optimization system & \pageref{fig:overview}\\ \hline
+Fig \ref{fig:arch} & System architecture of the proposed CI/CD optimization framework & \pageref{fig:arch}\\ \hline
+Fig \ref{fig:method} & Proposed methodology for AI-driven CI/CD pipeline optimization & \pageref{fig:method}\\ \hline
+Fig \ref{fig:class} & Class diagram of the CI/CD optimization system & \pageref{fig:class}\\ \hline
+Fig \ref{fig:activity} & Activity diagram of the CI/CD optimization system & \pageref{fig:activity}\\ \hline
+Fig \ref{fig:usecase} & Use case diagram of the CI/CD optimization system & \pageref{fig:usecase}\\ \hline
+Fig \ref{fig:logflow} & Log clustering flow for root cause analysis & \pageref{fig:logflow}\\ \hline
+Fig \ref{fig:scoring} & Scoring path of the deployed system & \pageref{fig:scoring}\\ \hline
+Fig \ref{fig:dash_overview} & Dashboard: summary cards and daily failure-rate trend & \pageref{fig:dash_overview}\\ \hline
+Fig \ref{fig:pipelines} & Pipelines page with recent-risk sparklines & \pageref{fig:pipelines}\\ \hline
+Fig \ref{fig:timeline} & Risk timeline of a repository with its alert threshold & \pageref{fig:timeline}\\ \hline
+Fig \ref{fig:submit} & Submit Build page: scoring a run with server-derived history & \pageref{fig:submit}\\ \hline
+Fig \ref{fig:whatif} & What-If page with SHAP explanation & \pageref{fig:whatif}\\ \hline
+Fig \ref{fig:modelcmp} & Development comparison of six classifiers (random split) & \pageref{fig:modelcmp}\\ \hline
+Fig \ref{fig:leakage} & AUC under progressively stricter evaluation & \pageref{fig:leakage}\\ \hline
+Fig \ref{fig:main} & Within-repository AUC of \tierC\ and \tierE\ across all evaluations & \pageref{fig:main}\\ \hline
+Fig \ref{fig:buffer} & Gain of \tierE\ as outcomes are withheld longer & \pageref{fig:buffer}\\ \hline
+Fig \ref{fig:folds} & Per-fold gain with 95\% confidence intervals & \pageref{fig:folds}\\ \hline
+Fig \ref{fig:persist} & \tierE\ vs.\ \tierC\ vs.\ a naive persistence score & \pageref{fig:persist}\\ \hline
+Fig \ref{fig:alert} & Global threshold vs.\ per-repository alert budget & \pageref{fig:alert}\\ \hline
+Fig \ref{fig:dash_models} & Dashboard: risk distribution and model-evidence panel & \pageref{fig:dash_models}\\ \hline
+\end{longtable}}
+\clearpage
+
+% ---------------------------------------------------------------- List of tables
+\begin{center}\fontsize{14}{17}\selectfont\bfseries LIST OF TABLES\end{center}
+\label{fm:lot}
+{\renewcommand{\arraystretch}{1.2}
+\begin{longtable}{|>{\centering\arraybackslash}p{1.6cm}|p{11.2cm}|>{\centering\arraybackslash}p{1.3cm}|}
+\hline
+\textbf{Table No.} & \textbf{Description} & \textbf{Page}\\ \hline
+\endhead
+\ref{tab:lit} & Literature survey summary & \pageref{tab:lit}\\ \hline
+\ref{tab:hw} & Hardware requirements & \pageref{tab:hw}\\ \hline
+\ref{tab:sw} & Software requirements & \pageref{tab:sw}\\ \hline
+\ref{tab:data} & Datasets used in the project & \pageref{tab:data}\\ \hline
+\ref{tab:tiers} & Feature tiers & \pageref{tab:tiers}\\ \hline
+\ref{tab:trace} & Requirement-to-implementation traceability & \pageref{tab:trace}\\ \hline
+\ref{tab:dev} & Development comparison of classifiers (random split) & \pageref{tab:dev}\\ \hline
+\ref{tab:leak} & The same task under progressively stricter evaluation & \pageref{tab:leak}\\ \hline
+\ref{tab:travis} & Travis CI results by finish buffer & \pageref{tab:travis}\\ \hline
+\ref{tab:attr} & Attribution of the \tierE\ gain on Travis CI & \pageref{tab:attr}\\ \hline
+\ref{tab:gha1} & First GitHub Actions test & \pageref{tab:gha1}\\ \hline
+\ref{tab:confirm} & GitHub Actions confirmation test & \pageref{tab:confirm}\\ \hline
+\ref{tab:holdout} & Deployed model on its holdout & \pageref{tab:holdout}\\ \hline
+\ref{tab:alert} & Alert policies compared & \pageref{tab:alert}\\ \hline
+\end{longtable}}
+\clearpage

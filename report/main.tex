@@ -1,0 +1,72 @@
+% Capstone Project Phase-1 report: AI-Driven Analysis and Optimization of CI/CD
+% Pipelines for Build Failure Prediction.  Build: latexmk -pdf main.tex
+\documentclass[12pt,a4paper,oneside]{report}
+
+% ---- Page, font and spacing: VI-semester capstone report guidelines ----
+\usepackage[a4paper,top=2.5cm,bottom=2.5cm,left=2.75cm,right=2.25cm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{newtxtext,newtxmath}          % Times New Roman
+\usepackage{setspace}\onehalfspacing      % line spacing 1.5
+\usepackage[parfill]{parskip}             % paragraphs separated by space, as in the draft
+\usepackage{microtype}
+\usepackage{ragged2e}
+
+\usepackage{graphicx,xcolor,array,longtable,booktabs,multirow,tabularx,makecell}
+\usepackage{amsmath}
+\usepackage{enumitem}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric,shapes.multipart,fit,calc,backgrounds}
+\usepackage{caption}
+\usepackage{float}
+\usepackage{chngcntr}
+\usepackage[hidelinks]{hyperref}
+\usepackage{url}
+\urlstyle{same}
+
+\graphicspath{{images/}{figures/}{../paper/figures/}{../paper/screens/}}
+
+% ---- Headings: chapter 14 pt all caps, sections 14 pt bold, subsections 12 pt bold ----
+\usepackage{titlesec}
+\titleformat{\chapter}[hang]{\fontsize{14}{17}\selectfont\bfseries}{CHAPTER \thechapter\ --}{0.4em}{\MakeUppercase}
+\titlespacing*{\chapter}{0pt}{0pt}{16pt}
+\titleformat{\section}{\fontsize{14}{17}\selectfont\bfseries}{\thesection}{0.6em}{}
+\titleformat{\subsection}{\fontsize{12}{15}\selectfont\bfseries}{\thesubsection}{0.6em}{}
+\titlespacing*{\section}{0pt}{14pt}{6pt}
+\titlespacing*{\subsection}{0pt}{10pt}{4pt}
+\newcommand{\minorhead}[1]{\par\vspace{4pt}\noindent\textbf{#1}\par}
+
+% ---- Captions: "Fig N:" numbered through the report; tables numbered per chapter ----
+\counterwithout{figure}{chapter}
+\captionsetup{font=small,labelfont=bf,labelsep=colon,justification=centering}
+\captionsetup[figure]{name=Fig}
+\captionsetup[table]{name=Table,position=top}
+\setlength{\abovecaptionskip}{6pt}
+
+\setlist{itemsep=2pt,topsep=4pt}
+\renewcommand{\arraystretch}{1.25}
+\newcolumntype{L}{>{\RaggedRight\arraybackslash}X}
+\newcommand{\tierC}{Tier~C}
+\newcommand{\tierE}{Tier~E}
+\newcommand{\dAUC}{$\Delta$AUC}
+\definecolor{vtured}{RGB}{204,0,0}
+\definecolor{titlegreen}{RGB}{56,118,29}
+\definecolor{deptblue}{RGB}{17,85,204}
+\definecolor{sigblue}{RGB}{61,133,198}
+
+\AtBeginDocument{\justifying}
+
+\begin{document}
+\input{frontmatter}
+
+\pagenumbering{arabic}
+\input{ch1_introduction}
+\input{ch2_problem}
+\input{ch3_literature}
+\input{ch4_requirements}
+\input{ch5_design}
+\input{ch6_tools}
+\input{ch7_implementation}
+\input{ch8_results}
+\input{ch9_conclusion}
+\input{references}
+\end{document}

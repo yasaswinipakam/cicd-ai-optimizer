@@ -1,0 +1,8 @@
+# LaTeX build files (rebuild with: latexmk -pdf main.tex)
+*.aux
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.toc
+main.pdf
